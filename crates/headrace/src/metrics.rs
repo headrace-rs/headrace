@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use clap::ValueEnum;
+use headrace_core::SharedMetrics;
+use headrace_core::metrics::{Metrics, NodeKind, NodeRecorder};
 use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, Histogram, Meter, MeterProvider};
 use opentelemetry_otlp::WithExportConfig; // brings `with_endpoint` onto the OTLP builder
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
-use headrace_core::SharedMetrics;
-use headrace_core::metrics::{Metrics, NodeKind, NodeRecorder};
 
 /// Where headrace's self-telemetry goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

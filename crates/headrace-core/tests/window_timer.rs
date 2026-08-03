@@ -52,7 +52,10 @@ async fn window_flushes_on_the_timer() {
     // Cross the window boundary deterministically — this is the only thing that triggers a flush.
     tokio::time::advance(Duration::from_secs(5)).await;
 
-    let flushed = out.recv().await.expect("window emits one aggregate on the timer");
+    let flushed = out
+        .recv()
+        .await
+        .expect("window emits one aggregate on the timer");
     assert_eq!(flushed.value, 3.0, "count of the three folded records");
     let start = flushed.start_ts_nanos.expect("window start set");
     assert_eq!(
