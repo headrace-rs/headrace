@@ -1,5 +1,9 @@
 # Headrace
 
+[![CI](https://img.shields.io/github/actions/workflow/status/headrace-rs/headrace/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/headrace-rs/headrace/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/headrace-rs/headrace/main?style=flat-square)](https://codecov.io/gh/headrace-rs/headrace)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](./LICENSE)
+
 OTel-native, stateful stream processing in a single Rust binary. Point telemetry at it,
 define aggregations declaratively, emit to any backend. Runs in-process for dev/edge or
 scales on Kubernetes over a partitioned backend.
