@@ -1,0 +1,21 @@
+# Architecture Decision Records
+
+Significant architectural decisions are recorded here as ADRs, using the
+[Nygard format](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)
+(see [`template.md`](./template.md)). Background: the
+[ADR project](https://github.com/architecture-decision-record/architecture-decision-record).
+
+## How to add one
+
+1. Copy `template.md` to `NNNN-kebab-title.md`, incrementing `NNNN`.
+2. Write it, set the status, and open a PR (ideally in the same PR as the change it justifies).
+3. A superseded decision stays in place: mark it `Superseded by ADR-XXXX` and link both ways.
+
+## Index
+
+- [0001](./0001-record-architecture-decisions.md) - Record architecture decisions
+- [0002](./0002-headrace-is-a-layer-not-infrastructure.md) - Headrace is a layer, not infrastructure
+- [0003](./0003-nats-jetstream-as-the-scaled-backend.md) - NATS JetStream as the scaled backend
+- [0004](./0004-otlp-at-the-boundaries-uniform-record-model.md) - OTLP at the boundaries, uniform Record model
+- [0005](./0005-event-time-windows-and-mergeable-aggregates.md) - Event-time windows with mergeable aggregates
+- [0006](./0006-call-processing-nodes-transforms.md) - Call processing nodes "transforms"
