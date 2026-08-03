@@ -20,6 +20,9 @@ pub async fn run(src: Source, tx: Box<dyn Producer>, nm: NodeMetrics) -> Result<
     }
 }
 
+/// Synthetic source for demos and tests: emit one metric record per `interval`, cycling
+/// `service.name` over `services` and `http.route` over `routes` with a varying `value`.
+/// Stops when the downstream closes.
 async fn generator(
     metric: &str,
     interval: &str,
@@ -61,6 +64,8 @@ async fn generator(
     }
 }
 
+/// Read one JSON-encoded `Record` per line from stdin; blank lines are ignored and malformed
+/// lines are logged and skipped. Stops at EOF or when the downstream closes.
 async fn stdin(tx: Box<dyn Producer>, nm: &NodeMetrics) -> Result<()> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Some(line) = lines.next_line().await? {
