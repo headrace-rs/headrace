@@ -1,0 +1,65 @@
+//! The window operator flushes on a timer, driven by *virtual* time so the test is
+//! deterministic — no wall-clock sleeps. Exercises the async driver + in-process backend
+//! together, which the pure-`Window` unit tests don't cover.
+
+use headrace_core::backend::{Backend, InProcess};
+use headrace_core::metrics::{NodeKind, NodeMetrics};
+use headrace_core::record::{Attrs, Record};
+use headrace_core::{NoopMetrics, SharedMetrics};
+use headrace_ir::Operator;
+use std::sync::Arc;
+use std::time::Duration;
+
+fn rec(v: f64) -> Record {
+    Record {
+        ts_nanos: 1,
+        start_ts_nanos: None,
+        resource: Attrs::new(),
+        scope: None,
+        name: "m".into(),
+        value: v,
+        attrs: Attrs::new(),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn window_flushes_on_the_timer() {
+    let mut be = InProcess::new(64);
+    let feed = be.producer("in"); // we push inputs here
+    let win_rx = be.consumer("in"); // window reads them
+    let win_tx = be.producer("w"); // window writes rollups
+    let mut out = be.consumer("w"); // we read them
+    drop(be);
+
+    let m: SharedMetrics = Arc::new(NoopMetrics);
+    let nm = NodeMetrics::bind(&m, "w", NodeKind::Window);
+
+    // Operator is #[non_exhaustive]; build it through the parser, not a literal.
+    let op: Operator =
+        serde_yaml::from_str("type: window\nid: w\ninput: in\nsize: 5s\naggregate:\n  op: count")
+            .unwrap();
+    let task = tokio::spawn(headrace_core::operator::run(op, win_rx, win_tx, nm));
+
+    for _ in 0..3 {
+        feed.send(None, rec(1.0)).await.unwrap();
+    }
+    // Time is frozen: the +5s tick isn't ready, so the select loop can only take `recv`.
+    // Yield to let the window fold all three before any flush can fire.
+    for _ in 0..16 {
+        tokio::task::yield_now().await;
+    }
+
+    // Cross the window boundary deterministically — this is the only thing that triggers a flush.
+    tokio::time::advance(Duration::from_secs(5)).await;
+
+    let flushed = out.recv().await.expect("window emits one aggregate on the timer");
+    assert_eq!(flushed.value, 3.0, "count of the three folded records");
+    let start = flushed.start_ts_nanos.expect("window start set");
+    assert_eq!(
+        flushed.ts_nanos - start,
+        Duration::from_secs(5).as_nanos() as u64,
+        "window [start,end) spans `size`"
+    );
+
+    task.abort();
+}

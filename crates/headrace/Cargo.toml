@@ -1,0 +1,23 @@
+[package]
+name = "headrace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "headrace"
+path = "src/main.rs"
+
+[dependencies]
+headrace-ir.workspace = true
+headrace-core.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry-stdout.workspace = true

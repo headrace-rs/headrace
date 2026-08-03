@@ -1,0 +1,26 @@
+[package]
+name = "headrace-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+headrace-ir.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+humantime.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+mockall = { workspace = true, optional = true }
+
+[features]
+# Exposes automock-generated Backend/Producer/Consumer mocks for downstream tests.
+mocks = ["dep:mockall"]
+
+[dev-dependencies]
+serde_yaml.workspace = true
+proptest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

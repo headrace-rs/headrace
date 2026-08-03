@@ -1,0 +1,34 @@
+# Roll up p-less average request latency per service+route in 5s windows.
+# Run: cargo run -p headrace -- run examples/latency.yaml
+version: 0
+
+sources:
+  - type: generator
+    id: gen
+    metric: http.server.duration
+    interval: 200ms
+    services: [checkout, cart, search]
+    routes: [/, /api/order, /api/items]
+
+operators:
+  - type: filter
+    id: only_checkout
+    input: gen
+    key: service.name
+    equals: checkout
+
+  - type: window
+    id: rollup
+    input: only_checkout
+    kind: tumbling
+    size: 5s
+    group_by: [service.name, http.route]
+    aggregate:
+      op: avg
+      field: value
+
+sinks:
+  - type: stdout
+    id: out
+    input: rollup
+    format: text

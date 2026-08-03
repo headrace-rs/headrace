@@ -1,0 +1,13 @@
+[package]
+name = "headrace-ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+
+[dev-dependencies]
+serde_yaml.workspace = true
