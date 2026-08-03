@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -11,6 +11,7 @@ env:
 
 jobs:
   lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,12 +19,13 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: rustfmt
+      - name: Check formatting
         run: cargo fmt --all --check
-      - name: clippy
+      - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   test:
+    name: Test and coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,17 +35,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov,cargo-hack
-      # Instrument once (RUSTFLAGS pinned via show-env so rust-cache reuses the build),
-      # run tests for every feature combination, then merge into one coverage report.
-      - name: test + coverage across features
+          tool: cargo-llvm-cov
+      - name: Test and collect coverage
         run: |
-          source <(cargo llvm-cov show-env --export-prefix)
-          cargo llvm-cov clean --workspace
-          cargo hack --workspace --each-feature test --locked
-          cargo llvm-cov report --lcov --output-path lcov.info
+          cargo llvm-cov --workspace --all-features --locked --lcov --output-path lcov.info
           cargo llvm-cov report --summary-only
-      - name: upload coverage
+      - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: lcov
