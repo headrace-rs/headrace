@@ -22,7 +22,8 @@ mockall = "0.13"
 humantime = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "io-std", "io-util"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
 clap = { version = "4", features = ["derive"] }
 opentelemetry = "0.32"
 opentelemetry_sdk = { version = "0.32", features = ["metrics"] }

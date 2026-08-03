@@ -6,6 +6,14 @@ use headrace_core::backend::InProcess;
 use headrace_ir::Pipeline;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing_subscriber::EnvFilter;
+
+/// Log output format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum LogFormat {
+    Text,
+    Json,
+}
 
 #[derive(Parser)]
 #[command(
@@ -19,6 +27,9 @@ struct Cli {
     /// Log filter (e.g. info, headrace_core=debug).
     #[arg(long, default_value = "info", global = true)]
     log: String,
+    /// Log output format.
+    #[arg(long, value_enum, default_value = "text", global = true)]
+    log_format: LogFormat,
     /// Self-telemetry exporter for headrace's own metrics (stdout mode interleaves with data).
     #[arg(long, value_enum, default_value = "off", global = true)]
     metrics: metrics::Mode,
@@ -40,12 +51,9 @@ enum Cmd {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    // Logs go to stderr so stdout carries only the pipeline's data (the stdout sink).
-    tracing_subscriber::fmt()
-        .with_env_filter(cli.log.clone())
-        .with_target(false)
-        .with_writer(std::io::stderr)
-        .init();
+    // stderr keeps stdout pure for the stdout sink; the guard flushes the non-blocking
+    // writer on exit, so it must live for the whole command.
+    let _guard = init_tracing(&cli.log, cli.log_format);
 
     match cli.cmd {
         Cmd::Run { file } => {
@@ -71,6 +79,22 @@ async fn main() -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Initialize logging to a non-blocking stderr writer. Returns the writer's guard, which must
+/// be held for the process lifetime (its drop flushes buffered logs).
+fn init_tracing(filter: &str, format: LogFormat) -> tracing_appender::non_blocking::WorkerGuard {
+    let (writer, guard) = tracing_appender::non_blocking(std::io::stderr());
+    let base = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::new(filter))
+        .with_target(false)
+        .with_ansi(false)
+        .with_writer(writer);
+    match format {
+        LogFormat::Json => base.json().flatten_event(true).init(),
+        LogFormat::Text => base.init(),
+    }
+    guard
 }
 
 fn load(file: &PathBuf) -> Result<Pipeline> {
