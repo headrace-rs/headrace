@@ -1,5 +1,5 @@
 //! OTel-backed [`Metrics`] for the binary. Kept out of `headrace-core` so the core carries
-//! no OpenTelemetry dependency — the SDK lives only here, behind the `Metrics` seam.
+//! no OpenTelemetry dependency - the SDK lives only here, behind the `Metrics` boundary.
 
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 pub enum Mode {
     /// No self-telemetry (default).
     Off,
-    /// Periodically print metrics to stderr — for debugging.
+    /// Periodically print metrics to stderr - for debugging.
     Stdout,
     /// Export metrics over OTLP/gRPC to a collector.
     Otlp,
@@ -46,7 +46,7 @@ pub fn init(mode: Mode, endpoint: Option<String>) -> Result<Option<Telemetry>> {
     let provider = match mode {
         Mode::Off => return Ok(None),
         // NB: the 0.32 stdout exporter is hardcoded to stdout, so metric dumps interleave
-        // with the stdout sink's data. Debug convenience only — use OTLP for clean output.
+        // with the stdout sink's data. Debug convenience only - use OTLP for clean output.
         Mode::Stdout => SdkMeterProvider::builder()
             .with_resource(resource)
             .with_periodic_exporter(opentelemetry_stdout::MetricExporter::default())

@@ -28,6 +28,7 @@ cargo test --workspace --all-features
 - Comments justify *why*, not *what*. Delete any comment that restates the code.
 - Use [mermaid](https://mermaid.js.org/) for designs worth a picture.
 - Do not use the word "seam"; say boundary, interface, or extension point.
+- Do not use "bespoke"; say "custom".
 
 ## Commits
 

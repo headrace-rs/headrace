@@ -39,7 +39,7 @@ impl AttrValue {
 /// The unit in flight. OTel data model, flattened to what the nodes need.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
-    /// Sample time — for a window rollup, the window end (OTel `TimeUnixNano`).
+    /// Sample time - for a window rollup, the window end (OTel `TimeUnixNano`).
     pub ts_nanos: u64,
     /// Window start (OTel `StartTimeUnixNano`); set by windowing, `None` for point samples.
     #[serde(default)]

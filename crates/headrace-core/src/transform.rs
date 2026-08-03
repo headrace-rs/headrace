@@ -59,10 +59,10 @@ async fn filter(
 
 /// A key part per `group_by` dimension, in the transform's declared order.
 ///
-/// Canonical and hashable: types stay distinct (`Int(1)` ≠ `Str("1")`) and a
+/// Canonical and hashable: types stay distinct (`Int(1)` != `Str("1")`) and a
 /// missing attribute (`Absent`) differs from an empty string, so distinct groups
 /// never collide. This is also the identity that partitions state across workers
-/// in the scaled deployment (DESIGN.md: group_key → partition → worker-local state).
+/// in the scaled deployment (DESIGN.md: group_key -> partition -> worker-local state).
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum KeyPart {
     Bool(bool),
@@ -116,7 +116,7 @@ impl Agg {
     }
 
     /// `None` for an empty group on ops that need a sample (min/max/avg); an empty
-    /// group would otherwise emit `±INFINITY`. Count of an empty group is `0`.
+    /// group would otherwise emit `+/-INFINITY`. Count of an empty group is `0`.
     fn value(&self, op: AggregateOp) -> Option<f64> {
         if self.count == 0 {
             return match op {
@@ -216,7 +216,7 @@ fn group_key(rec: &Record, keys: &[String]) -> (GroupKey, Attrs) {
 }
 
 /// The numeric sample for a record, or `None` if the configured field is
-/// absent or non-numeric. No silent fallback to `value` — that is the caller's
+/// absent or non-numeric. No silent fallback to `value` - that is the caller's
 /// `on_missing` policy to decide.
 fn value_of(rec: &Record, agg: &Aggregate) -> Option<f64> {
     match agg.field.as_deref() {
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn on_missing_skip_drops_record_no_silent_fallback() {
-        // field `lat` is absent → record is skipped, NOT folded as `value`.
+        // field `lat` is absent -> record is skipped, NOT folded as `value`.
         let mut w = Window::new(
             vec![],
             agg(AggregateOp::Count, Some("lat"), OnMissing::Skip),
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn empty_group_yields_no_record() {
-        // A group with no numeric samples must not emit ±INFINITY.
+        // A group with no numeric samples must not emit +/-INFINITY.
         let a = Agg::new("m".into(), Attrs::new());
         assert_eq!(a.value(AggregateOp::Min), None);
         assert_eq!(a.value(AggregateOp::Avg), None);
@@ -449,10 +449,10 @@ mod tests {
     }
 }
 
-/// Exercises the async transforms against mocked `Backend` handles — the seam a
+/// Exercises the async transforms against mocked `Backend` handles - the boundary a
 /// networked backend swaps into. Run with `--features mocks`.
 #[cfg(all(test, feature = "mocks"))]
-mod seam_tests {
+mod backend_tests {
     use super::*;
     use crate::backend::{MockConsumer, MockProducer};
     use crate::metrics::{Metrics, NodeKind, NodeRecorder, SharedMetrics};

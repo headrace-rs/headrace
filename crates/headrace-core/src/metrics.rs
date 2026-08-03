@@ -1,15 +1,15 @@
-//! headrace's own telemetry — a seam so the core records metrics without depending on any
+//! headrace's own telemetry - a boundary so the core records metrics without depending on any
 //! particular SDK. The binary supplies an OTel-backed [`Metrics`]; tests supply fakes;
 //! the default is [`NoopMetrics`].
 //!
 //! [`Metrics::node`] hands out a per-node [`NodeRecorder`] once at wiring time, so the
-//! implementation can cache its attribute set and instrument handles — the per-record
+//! implementation can cache its attribute set and instrument handles - the per-record
 //! calls then allocate nothing. The recorders are the one piece of state shared across
 //! node tasks, handed out as cheap `Arc` clones.
 
 use std::sync::Arc;
 
-/// The kind of node a metric is attributed to — a low-cardinality label.
+/// The kind of node a metric is attributed to - a low-cardinality label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
     Source,
@@ -31,13 +31,13 @@ impl NodeKind {
 
 /// Binds per-node recorders. `Send + Sync`; one instance is shared across all nodes.
 pub trait Metrics: Send + Sync {
-    /// Bind a recorder to one node. Called once per node at wiring time — the place to
+    /// Bind a recorder to one node. Called once per node at wiring time - the place to
     /// pre-compute attributes so the hot path stays allocation-free.
     fn node(&self, node: &str, kind: NodeKind) -> Arc<dyn NodeRecorder>;
 }
 
 /// Records one node's telemetry. Its attributes are fixed at construction, so these
-/// calls — invoked once per record on the hot path — allocate nothing.
+/// calls - invoked once per record on the hot path - allocate nothing.
 pub trait NodeRecorder: Send + Sync {
     /// A record was emitted/forwarded.
     fn record_out(&self);

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Static pipeline errors — surfaced by `headrace validate` before anything runs.
+/// Static pipeline errors - surfaced by `headrace validate` before anything runs.
 #[derive(Debug, Error)]
 pub enum ValidationError {
     #[error("duplicate node id `{0}`")]

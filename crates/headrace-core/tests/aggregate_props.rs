@@ -1,9 +1,9 @@
 //! Property tests for the two invariants that make windowed aggregation correct once it is
 //! partitioned across workers: results don't depend on record order, and partial aggregates
 //! merge into the whole. If either breaks, cross-partition rollups and changelog recovery
-//! are wrong (DESIGN.md → Stateful semantics).
+//! are wrong (DESIGN.md -> Stateful semantics).
 //!
-//! Samples are integer-valued so f64 sums are exact — otherwise float non-associativity
+//! Samples are integer-valued so f64 sums are exact - otherwise float non-associativity
 //! would make "order-independent" false in the last ULP for the wrong reason.
 
 use headrace_core::record::{Attrs, Record};
@@ -47,7 +47,7 @@ fn agg_over(op: AggregateOp, vs: &[f64]) -> Option<f64> {
     w.flush(0, 1).into_iter().next().map(|r| r.value)
 }
 
-/// The monoid combine for a distributive op — how two partitions' partials become the whole.
+/// The monoid combine for a distributive op - how two partitions' partials become the whole.
 fn merge(op: AggregateOp, a: Option<f64>, b: Option<f64>) -> Option<f64> {
     match (a, b) {
         (Some(a), Some(b)) => Some(match op {
@@ -72,7 +72,7 @@ proptest! {
         }
     }
 
-    /// Aggregating the whole equals merging the per-partition partials — the property that
+    /// Aggregating the whole equals merging the per-partition partials - the property that
     /// lets group state live on separate workers. Avg is excluded: it is not mergeable from
     /// averages (you'd need count-weighting), which is why the engine keeps sum+count, not avg.
     #[test]

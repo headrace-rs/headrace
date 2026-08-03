@@ -5,12 +5,12 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 /// The partition/group key a record is published under, as raw bytes. A partitioned
-/// backend hashes it to route every record for a key to the same worker — and thus the
-/// same window state (DESIGN.md: group_key → partition → worker-local state). The
+/// backend hashes it to route every record for a key to the same worker - and thus the
+/// same window state (DESIGN.md: group_key -> partition -> worker-local state). The
 /// in-process backend ignores it. `None` means unkeyed.
 pub type Key = Option<Vec<u8>>;
 
-/// A named edge between two nodes. In-process today (mpsc); this is the seam a NATS
+/// A named edge between two nodes. In-process today (mpsc); this is the boundary a NATS
 /// JetStream impl (subject per node, partitioned by key, durable pull consumers) drops
 /// into for the scaled deployment. Handles are cheap; a networked backend connects in
 /// its constructor and does I/O per message in [`Producer::send`] / [`Consumer::recv`].
@@ -39,8 +39,8 @@ pub trait Consumer: Send {
     // Acks arrive with the durable NATS backend (v0.2).
 }
 
-/// In-memory backend: one bounded mpsc channel per node. No external dependencies —
-/// the monolithic (dev/edge/robotics) deployment.
+/// In-memory backend: one bounded mpsc channel per node. No external dependencies -
+/// the monolithic (dev/edge) deployment.
 pub struct InProcess {
     chans: HashMap<String, (mpsc::Sender<Record>, Option<mpsc::Receiver<Record>>)>,
     cap: usize,

@@ -1,5 +1,5 @@
 //! The window transform flushes on a timer, driven by *virtual* time so the test is
-//! deterministic — no wall-clock sleeps. Exercises the async driver + in-process backend
+//! deterministic - no wall-clock sleeps. Exercises the async driver + in-process backend
 //! together, which the pure-`Window` unit tests don't cover.
 
 use headrace_core::backend::{Backend, InProcess};
@@ -49,7 +49,7 @@ async fn window_flushes_on_the_timer() {
         tokio::task::yield_now().await;
     }
 
-    // Cross the window boundary deterministically — this is the only thing that triggers a flush.
+    // Cross the window boundary deterministically - this is the only thing that triggers a flush.
     tokio::time::advance(Duration::from_secs(5)).await;
 
     let flushed = out

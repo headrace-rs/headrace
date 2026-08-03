@@ -1,4 +1,4 @@
-//! Integration tests for the IR — the contract a future authoring agent generates against.
+//! Integration tests for the IR - the contract a future authoring agent generates against.
 
 use headrace_ir::*;
 

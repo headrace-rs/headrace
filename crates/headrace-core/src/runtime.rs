@@ -27,7 +27,7 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
         outputs.insert(o.id());
     }
 
-    // 2. Durations parse here, not at runtime — a passing `validate` must be runnable.
+    // 2. Durations parse here, not at runtime - a passing `validate` must be runnable.
     for s in &p.sources {
         if let Source::Generator { id, interval, .. } = s {
             parse_duration(id, interval)?;
@@ -48,7 +48,7 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
         check_edge(s.input(), &outputs, &mut consumed)?;
     }
 
-    // 4. Every transform is reachable from a source — rejects cycles and orphans.
+    // 4. Every transform is reachable from a source - rejects cycles and orphans.
     check_reachable(p)?;
     Ok(())
 }

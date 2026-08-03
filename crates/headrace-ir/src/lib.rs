@@ -1,5 +1,5 @@
 //! Pipeline IR: the declarative graph a human (or, later, an agent) targets.
-//! This is *not* the data model — records in flight are OTel-shaped (see headrace-core::Record).
+//! This is *not* the data model - records in flight are OTel-shaped (see headrace-core::Record).
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub enum Source {
     },
     /// One JSON-encoded Record per line on stdin.
     Stdin { id: String },
-    // Otlp { id, listen } — next.
+    // Otlp { id, listen } - next.
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -110,7 +110,7 @@ pub enum Sink {
         #[serde(default)]
         format: Format,
     },
-    // Otlp { id, input, endpoint } — next.
+    // Otlp { id, input, endpoint } - next.
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -155,7 +155,7 @@ impl Sink {
     }
 }
 
-/// JSON Schema for the IR — the contract a future authoring agent generates against.
+/// JSON Schema for the IR - the contract a future authoring agent generates against.
 pub fn json_schema() -> String {
     let schema = schemars::schema_for!(Pipeline);
     serde_json::to_string_pretty(&schema).expect("schema serializes")
