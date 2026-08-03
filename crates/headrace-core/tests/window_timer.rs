@@ -43,15 +43,9 @@ async fn window_flushes_on_the_timer() {
     for _ in 0..3 {
         feed.send(None, rec(1.0)).await.unwrap();
     }
-    // Time is frozen: the +5s tick isn't ready, so the select loop can only take `recv`.
-    // Yield to let the window fold all three before any flush can fire.
-    for _ in 0..16 {
-        tokio::task::yield_now().await;
-    }
-
-    // Cross the window boundary deterministically - this is the only thing that triggers a flush.
-    tokio::time::advance(Duration::from_secs(5)).await;
-
+    // With the clock paused, the runtime auto-advances to the next timer once nothing else can
+    // progress: the three records fold first (recv is ready, the tick is not), then time jumps
+    // to the 5s boundary and the window flushes. No sleeps, no manual advance.
     let flushed = out
         .recv()
         .await
