@@ -259,6 +259,9 @@ async fn shutdown_signal() {
 mod tests {
     use super::*;
     use crate::backend::InProcess;
+    use crate::metrics::{Metrics, NodeRecorder};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
     fn accepts_a_valid_pipeline() {
@@ -358,13 +361,13 @@ mod tests {
             sinks: [{ type: stdout, id: o, input: w }]
         "#,
         );
-        let metrics = std::sync::Arc::new(ErrCounts::default());
+        let metrics = Arc::new(ErrCounts::default());
         let err = run(p, InProcess::default(), metrics.clone())
             .await
             .expect_err("missing field should fail the run");
         assert!(err.to_string().contains("missing numeric field"));
         assert!(
-            metrics.errors.load(std::sync::atomic::Ordering::Relaxed) >= 1,
+            metrics.errors.load(Ordering::Relaxed) >= 1,
             "the failing node's error must be metered"
         );
     }
@@ -381,25 +384,24 @@ mod tests {
 
     #[derive(Default)]
     struct ErrCounts {
-        errors: std::sync::Arc<std::sync::atomic::AtomicU64>,
+        errors: Arc<AtomicU64>,
     }
-    impl crate::metrics::Metrics for ErrCounts {
-        fn node(&self, _: &str, _: NodeKind) -> std::sync::Arc<dyn crate::metrics::NodeRecorder> {
-            std::sync::Arc::new(ErrRecorder {
+    impl Metrics for ErrCounts {
+        fn node(&self, _: &str, _: NodeKind) -> Arc<dyn NodeRecorder> {
+            Arc::new(ErrRecorder {
                 errors: self.errors.clone(),
             })
         }
     }
     struct ErrRecorder {
-        errors: std::sync::Arc<std::sync::atomic::AtomicU64>,
+        errors: Arc<AtomicU64>,
     }
-    impl crate::metrics::NodeRecorder for ErrRecorder {
+    impl NodeRecorder for ErrRecorder {
         fn record_out(&self) {}
         fn record_dropped(&self, _: u64) {}
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {
-            self.errors
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.errors.fetch_add(1, Ordering::Relaxed);
         }
     }
 }

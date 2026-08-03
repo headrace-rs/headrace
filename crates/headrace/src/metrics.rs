@@ -104,8 +104,8 @@ impl OtelMetrics {
 }
 
 impl Metrics for OtelMetrics {
-    fn node(&self, node: &str, kind: NodeKind) -> std::sync::Arc<dyn NodeRecorder> {
-        std::sync::Arc::new(OtelNodeRecorder {
+    fn node(&self, node: &str, kind: NodeKind) -> Arc<dyn NodeRecorder> {
+        Arc::new(OtelNodeRecorder {
             attrs: [
                 KeyValue::new("node", node.to_string()),
                 KeyValue::new("kind", kind.as_str()),
