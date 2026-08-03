@@ -2,6 +2,7 @@ mod metrics;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use headrace_core::backend::InProcess;
 use headrace_ir::Pipeline;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -54,7 +55,7 @@ async fn main() -> Result<()> {
                 Some(t) => t.metrics.clone(),
                 None => Arc::new(headrace_core::NoopMetrics),
             };
-            let result = headrace_core::run(pipeline, recorder).await;
+            let result = headrace_core::run(pipeline, InProcess::default(), recorder).await;
             if let Some(t) = telemetry {
                 t.shutdown();
             }

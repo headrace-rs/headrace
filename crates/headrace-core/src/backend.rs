@@ -62,6 +62,15 @@ impl InProcess {
     }
 }
 
+/// Default channel capacity for [`InProcess`].
+pub const DEFAULT_CAP: usize = 1024;
+
+impl Default for InProcess {
+    fn default() -> Self {
+        Self::new(DEFAULT_CAP)
+    }
+}
+
 impl Backend for InProcess {
     fn producer(&mut self, id: &str) -> Box<dyn Producer> {
         self.ensure(id);

@@ -1,4 +1,4 @@
-use crate::backend::{Backend, InProcess};
+use crate::backend::Backend;
 use crate::error::ValidationError;
 use crate::metrics::{NodeKind, NodeMetrics, SharedMetrics};
 use crate::{sink, source, transform};
@@ -6,8 +6,6 @@ use anyhow::{Result, anyhow};
 use headrace_ir::{Pipeline, Source, Transform};
 use std::collections::{HashMap, HashSet};
 use tokio::task::{JoinError, JoinSet};
-
-const CHANNEL_CAP: usize = 1024;
 
 /// Static checks: unique ids, durations parse, input refs resolve, each output has at
 /// most one consumer, and every transform is reachable from a source (no cycles/orphans).
@@ -109,20 +107,19 @@ fn check_reachable(p: &Pipeline) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Wire the graph onto the in-process backend and run.
+/// Wire the graph onto `backend` and run.
 ///
 /// Runs until a shutdown signal (Ctrl-C / SIGTERM), a node failing or panicking
 /// (fail fast, surfacing the error), or all nodes completing on their own. On a
 /// signal it drains best-effort: sources stop, their dropped senders close the
 /// graph so windows flush and sinks empty; a second signal forces an abort.
-pub async fn run(p: Pipeline, metrics: SharedMetrics) -> Result<()> {
+pub async fn run(p: Pipeline, mut backend: impl Backend, metrics: SharedMetrics) -> Result<()> {
     validate(&p)?;
-    let mut be = InProcess::new(CHANNEL_CAP);
     let mut sources: JoinSet<Result<()>> = JoinSet::new();
     let mut work: JoinSet<Result<()>> = JoinSet::new();
 
     for s in &p.sources {
-        let tx = be.producer(s.id());
+        let tx = backend.producer(s.id());
         let nm = NodeMetrics::bind(&metrics, s.id(), NodeKind::Source);
         let node = nm.clone();
         let src = s.clone();
@@ -133,8 +130,8 @@ pub async fn run(p: Pipeline, metrics: SharedMetrics) -> Result<()> {
         });
     }
     for o in &p.transforms {
-        let rx = be.consumer(o.input());
-        let tx = be.producer(o.id());
+        let rx = backend.consumer(o.input());
+        let tx = backend.producer(o.id());
         let nm = NodeMetrics::bind(&metrics, o.id(), transform_kind(o));
         let node = nm.clone();
         let op = o.clone();
@@ -145,7 +142,7 @@ pub async fn run(p: Pipeline, metrics: SharedMetrics) -> Result<()> {
         });
     }
     for s in &p.sinks {
-        let rx = be.consumer(s.input());
+        let rx = backend.consumer(s.input());
         let nm = NodeMetrics::bind(&metrics, s.id(), NodeKind::Sink);
         let node = nm.clone();
         let snk = s.clone();
@@ -156,7 +153,7 @@ pub async fn run(p: Pipeline, metrics: SharedMetrics) -> Result<()> {
         });
     }
     // Release the backend's retained senders so channel-close propagates on drain.
-    drop(be);
+    drop(backend);
 
     tracing::info!(
         sources = p.sources.len(),
@@ -261,6 +258,7 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::InProcess;
 
     fn pipeline(yaml: &str) -> Pipeline {
         serde_yaml::from_str(yaml).expect("valid yaml")
@@ -395,7 +393,7 @@ mod tests {
         "#,
         );
         let metrics = std::sync::Arc::new(ErrCounts::default());
-        let err = run(p, metrics.clone())
+        let err = run(p, InProcess::default(), metrics.clone())
             .await
             .expect_err("missing field should fail the run");
         assert!(err.to_string().contains("missing numeric field"));
