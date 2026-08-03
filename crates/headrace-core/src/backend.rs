@@ -79,10 +79,13 @@ impl Backend for InProcess {
 
     fn consumer(&mut self, id: &str) -> Box<dyn Consumer> {
         self.ensure(id);
+        // `ensure` just inserted this entry, so the lookup cannot miss. A second consumer of
+        // one output is a wiring bug that `validate` (MultipleConsumers) rejects before we
+        // reach here, so the `take` failing is unreachable in a validated pipeline.
         let rx = self
             .chans
             .get_mut(id)
-            .unwrap()
+            .expect("channel just ensured")
             .1
             .take()
             .unwrap_or_else(|| panic!("output `{id}` already has a consumer"));
