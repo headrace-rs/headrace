@@ -11,7 +11,7 @@ pub async fn run(sink: Sink, mut rx: Box<dyn Consumer>, nm: NodeMetrics) -> Resu
     };
     while let Some(rec) = rx.recv().await {
         match format {
-            Format::Json => println!("{}", serde_json::to_string(&rec)?),
+            Format::Json => println!("{}", json(&rec)?),
             Format::Text => println!("{}", text(&rec)),
         }
         nm.out();
@@ -33,6 +33,11 @@ fn text(rec: &Record) -> String {
         rec.value,
         attrs.join(", ")
     )
+}
+
+/// One-line JSON encoding of a record (the `json` stdout format).
+fn json(rec: &Record) -> Result<String> {
+    Ok(serde_json::to_string(rec)?)
 }
 
 #[cfg(test)]
@@ -67,6 +72,19 @@ mod tests {
         assert_eq!(
             text(&rec(Some(50))),
             "100 [50..100] http.server.duration=42.00 {service.name=checkout}"
+        );
+    }
+
+    #[test]
+    fn json_roundtrips_record() {
+        let s = json(&rec(Some(50))).unwrap();
+        let back: Record = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.name, "http.server.duration");
+        assert_eq!(back.value, 42.0);
+        assert_eq!(back.start_ts_nanos, Some(50));
+        assert_eq!(
+            back.attrs.get("service.name"),
+            Some(&AttrValue::Str("checkout".into()))
         );
     }
 }
