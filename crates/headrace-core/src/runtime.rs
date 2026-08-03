@@ -260,16 +260,6 @@ mod tests {
     use super::*;
     use crate::backend::InProcess;
 
-    fn pipeline(yaml: &str) -> Pipeline {
-        serde_yaml::from_str(yaml).expect("valid yaml")
-    }
-
-    const GOOD: &str = r#"
-        sources:   [{ type: generator, id: gen, interval: 200ms }]
-        transforms: [{ type: window, id: w, input: gen, size: 5s, aggregate: { op: count } }]
-        sinks:     [{ type: stdout, id: out, input: w }]
-    "#;
-
     #[test]
     fn accepts_a_valid_pipeline() {
         assert!(validate(&pipeline(GOOD)).is_ok());
@@ -355,30 +345,6 @@ mod tests {
         assert!(propagate(Ok(Err(anyhow!("boom")))).is_err());
     }
 
-    #[derive(Default)]
-    struct ErrCounts {
-        errors: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    }
-    impl crate::metrics::Metrics for ErrCounts {
-        fn node(&self, _: &str, _: NodeKind) -> std::sync::Arc<dyn crate::metrics::NodeRecorder> {
-            std::sync::Arc::new(ErrRecorder {
-                errors: self.errors.clone(),
-            })
-        }
-    }
-    struct ErrRecorder {
-        errors: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    }
-    impl crate::metrics::NodeRecorder for ErrRecorder {
-        fn record_out(&self) {}
-        fn record_dropped(&self, _: u64) {}
-        fn window_flushed(&self, _: u64) {}
-        fn node_error(&self) {
-            self.errors
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-
     #[tokio::test]
     async fn a_failing_node_stops_the_run_and_meters_the_error() {
         // `on_missing: error` on an absent field fails the window on the first record;
@@ -401,5 +367,39 @@ mod tests {
             metrics.errors.load(std::sync::atomic::Ordering::Relaxed) >= 1,
             "the failing node's error must be metered"
         );
+    }
+
+    fn pipeline(yaml: &str) -> Pipeline {
+        serde_yaml::from_str(yaml).expect("valid yaml")
+    }
+
+    const GOOD: &str = r#"
+        sources:   [{ type: generator, id: gen, interval: 200ms }]
+        transforms: [{ type: window, id: w, input: gen, size: 5s, aggregate: { op: count } }]
+        sinks:     [{ type: stdout, id: out, input: w }]
+    "#;
+
+    #[derive(Default)]
+    struct ErrCounts {
+        errors: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    }
+    impl crate::metrics::Metrics for ErrCounts {
+        fn node(&self, _: &str, _: NodeKind) -> std::sync::Arc<dyn crate::metrics::NodeRecorder> {
+            std::sync::Arc::new(ErrRecorder {
+                errors: self.errors.clone(),
+            })
+        }
+    }
+    struct ErrRecorder {
+        errors: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    }
+    impl crate::metrics::NodeRecorder for ErrRecorder {
+        fn record_out(&self) {}
+        fn record_dropped(&self, _: u64) {}
+        fn window_flushed(&self, _: u64) {}
+        fn node_error(&self) {
+            self.errors
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }

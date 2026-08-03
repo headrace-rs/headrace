@@ -11,6 +11,36 @@ use headrace_core::transform::Window;
 use headrace_ir::{Aggregate, AggregateOp, OnMissing};
 use proptest::prelude::*;
 
+proptest! {
+    /// Out-of-order arrival within a window must not change the result.
+    #[test]
+    fn aggregation_is_order_independent(ints in prop::collection::vec(-10_000i64..=10_000, 1..64)) {
+        let fwd: Vec<f64> = ints.iter().map(|&i| i as f64).collect();
+        let mut rev = fwd.clone();
+        rev.reverse();
+        for op in OPS {
+            prop_assert_eq!(agg_over(op, &fwd), agg_over(op, &rev), "{:?} depends on order", op);
+        }
+    }
+
+    /// Aggregating the whole equals merging the per-partition partials - the property that
+    /// lets group state live on separate workers. Avg is excluded: it is not mergeable from
+    /// averages (you'd need count-weighting), which is why the engine keeps sum+count, not avg.
+    #[test]
+    fn distributive_ops_are_mergeable(
+        ints in prop::collection::vec(-10_000i64..=10_000, 1..64),
+        k in 0usize..64,
+    ) {
+        let vs: Vec<f64> = ints.iter().map(|&i| i as f64).collect();
+        let (l, r) = vs.split_at(k.min(vs.len()));
+        for op in [AggregateOp::Count, AggregateOp::Sum, AggregateOp::Min, AggregateOp::Max] {
+            let whole = agg_over(op, &vs);
+            let merged = merge(op, agg_over(op, l), agg_over(op, r));
+            prop_assert_eq!(whole, merged, "{:?} is not mergeable across partitions", op);
+        }
+    }
+}
+
 const OPS: [AggregateOp; 5] = [
     AggregateOp::Count,
     AggregateOp::Sum,
@@ -57,35 +87,5 @@ fn merge(op: AggregateOp, a: Option<f64>, b: Option<f64>) -> Option<f64> {
             AggregateOp::Avg => unreachable!("avg is not mergeable from avgs alone"),
         }),
         (some, None) | (None, some) => some,
-    }
-}
-
-proptest! {
-    /// Out-of-order arrival within a window must not change the result.
-    #[test]
-    fn aggregation_is_order_independent(ints in prop::collection::vec(-10_000i64..=10_000, 1..64)) {
-        let fwd: Vec<f64> = ints.iter().map(|&i| i as f64).collect();
-        let mut rev = fwd.clone();
-        rev.reverse();
-        for op in OPS {
-            prop_assert_eq!(agg_over(op, &fwd), agg_over(op, &rev), "{:?} depends on order", op);
-        }
-    }
-
-    /// Aggregating the whole equals merging the per-partition partials - the property that
-    /// lets group state live on separate workers. Avg is excluded: it is not mergeable from
-    /// averages (you'd need count-weighting), which is why the engine keeps sum+count, not avg.
-    #[test]
-    fn distributive_ops_are_mergeable(
-        ints in prop::collection::vec(-10_000i64..=10_000, 1..64),
-        k in 0usize..64,
-    ) {
-        let vs: Vec<f64> = ints.iter().map(|&i| i as f64).collect();
-        let (l, r) = vs.split_at(k.min(vs.len()));
-        for op in [AggregateOp::Count, AggregateOp::Sum, AggregateOp::Min, AggregateOp::Max] {
-            let whole = agg_over(op, &vs);
-            let merged = merge(op, agg_over(op, l), agg_over(op, r));
-            prop_assert_eq!(whole, merged, "{:?} is not mergeable across partitions", op);
-        }
     }
 }

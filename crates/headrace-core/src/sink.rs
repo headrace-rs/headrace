@@ -45,20 +45,6 @@ mod tests {
     use super::*;
     use crate::record::{AttrValue, Attrs};
 
-    fn rec(start: Option<u64>) -> Record {
-        let mut attrs = Attrs::new();
-        attrs.insert("service.name".into(), AttrValue::Str("checkout".into()));
-        Record {
-            ts_nanos: 100,
-            start_ts_nanos: start,
-            resource: Attrs::new(),
-            scope: None,
-            name: "http.server.duration".into(),
-            value: 42.0,
-            attrs,
-        }
-    }
-
     #[test]
     fn text_point_sample_has_no_window() {
         assert_eq!(
@@ -86,5 +72,19 @@ mod tests {
             back.attrs.get("service.name"),
             Some(&AttrValue::Str("checkout".into()))
         );
+    }
+
+    fn rec(start: Option<u64>) -> Record {
+        let mut attrs = Attrs::new();
+        attrs.insert("service.name".into(), AttrValue::Str("checkout".into()));
+        Record {
+            ts_nanos: 100,
+            start_ts_nanos: start,
+            resource: Attrs::new(),
+            scope: None,
+            name: "http.server.duration".into(),
+            value: 42.0,
+            attrs,
+        }
     }
 }

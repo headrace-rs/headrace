@@ -10,18 +10,6 @@ use headrace_ir::Transform;
 use std::sync::Arc;
 use std::time::Duration;
 
-fn rec(v: f64) -> Record {
-    Record {
-        ts_nanos: 1,
-        start_ts_nanos: None,
-        resource: Attrs::new(),
-        scope: None,
-        name: "m".into(),
-        value: v,
-        attrs: Attrs::new(),
-    }
-}
-
 #[tokio::test(start_paused = true)]
 async fn window_flushes_on_the_timer() {
     let mut be = InProcess::new(64);
@@ -59,4 +47,16 @@ async fn window_flushes_on_the_timer() {
     );
 
     task.abort();
+}
+
+fn rec(v: f64) -> Record {
+    Record {
+        ts_nanos: 1,
+        start_ts_nanos: None,
+        resource: Attrs::new(),
+        scope: None,
+        name: "m".into(),
+        value: v,
+        attrs: Attrs::new(),
+    }
 }

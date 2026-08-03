@@ -72,24 +72,6 @@ pub fn now_nanos() -> u64 {
 mod tests {
     use super::*;
 
-    fn rec_with(attrs: &[(&str, AttrValue)], resource: &[(&str, AttrValue)]) -> Record {
-        Record {
-            ts_nanos: 1,
-            start_ts_nanos: None,
-            resource: resource
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect(),
-            scope: None,
-            name: "m".into(),
-            value: 1.0,
-            attrs: attrs
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect(),
-        }
-    }
-
     #[test]
     fn lookup_prefers_attrs_then_falls_back_to_resource() {
         let r = rec_with(
@@ -132,5 +114,23 @@ mod tests {
         let r: Record = serde_json::from_str(r#"{"ts_nanos":1,"name":"m","value":2.0}"#).unwrap();
         assert_eq!(r.start_ts_nanos, None);
         assert!(r.attrs.is_empty());
+    }
+
+    fn rec_with(attrs: &[(&str, AttrValue)], resource: &[(&str, AttrValue)]) -> Record {
+        Record {
+            ts_nanos: 1,
+            start_ts_nanos: None,
+            resource: resource
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+            scope: None,
+            name: "m".into(),
+            value: 1.0,
+            attrs: attrs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        }
     }
 }

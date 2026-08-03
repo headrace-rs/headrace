@@ -244,40 +244,7 @@ async fn emit(
 mod tests {
     use super::*;
 
-    fn agg(op: AggregateOp, field: Option<&str>, on_missing: OnMissing) -> Aggregate {
-        Aggregate {
-            op,
-            field: field.map(str::to_string),
-            on_missing,
-        }
-    }
-
-    fn rec(name: &str, value: f64, attrs: &[(&str, AttrValue)]) -> Record {
-        Record {
-            ts_nanos: 1,
-            start_ts_nanos: None,
-            resource: Attrs::new(),
-            scope: None,
-            name: name.into(),
-            value,
-            attrs: attrs
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect(),
-        }
-    }
-
     // --- aggregate math ---
-
-    fn one_group(op: AggregateOp, values: &[f64]) -> f64 {
-        let mut w = Window::new(vec![], agg(op, None, OnMissing::Skip));
-        for &v in values {
-            w.on_record(&rec("m", v, &[])).unwrap();
-        }
-        let out = w.flush(0, 100);
-        assert_eq!(out.len(), 1);
-        out[0].value
-    }
 
     #[test]
     fn aggregate_ops() {
@@ -380,5 +347,38 @@ mod tests {
         assert_eq!(a.value(AggregateOp::Min), None);
         assert_eq!(a.value(AggregateOp::Avg), None);
         assert_eq!(a.value(AggregateOp::Count), Some(0.0));
+    }
+
+    fn agg(op: AggregateOp, field: Option<&str>, on_missing: OnMissing) -> Aggregate {
+        Aggregate {
+            op,
+            field: field.map(str::to_string),
+            on_missing,
+        }
+    }
+
+    fn rec(name: &str, value: f64, attrs: &[(&str, AttrValue)]) -> Record {
+        Record {
+            ts_nanos: 1,
+            start_ts_nanos: None,
+            resource: Attrs::new(),
+            scope: None,
+            name: name.into(),
+            value,
+            attrs: attrs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        }
+    }
+
+    fn one_group(op: AggregateOp, values: &[f64]) -> f64 {
+        let mut w = Window::new(vec![], agg(op, None, OnMissing::Skip));
+        for &v in values {
+            w.on_record(&rec("m", v, &[])).unwrap();
+        }
+        let out = w.flush(0, 100);
+        assert_eq!(out.len(), 1);
+        out[0].value
     }
 }

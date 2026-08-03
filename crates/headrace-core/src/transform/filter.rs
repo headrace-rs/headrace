@@ -41,21 +41,6 @@ mod tests {
     use super::*;
     use crate::record::{AttrValue, Attrs};
 
-    fn rec(name: &str, value: f64, attrs: &[(&str, AttrValue)]) -> Record {
-        Record {
-            ts_nanos: 1,
-            start_ts_nanos: None,
-            resource: Attrs::new(),
-            scope: None,
-            name: name.into(),
-            value,
-            attrs: attrs
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect(),
-        }
-    }
-
     #[test]
     fn keep_semantics() {
         let r = rec(
@@ -74,6 +59,21 @@ mod tests {
         let r = rec("m", 1.0, &[("http.status", AttrValue::Int(200))]);
         assert!(keep(&r, "http.status", &Some("200".into())));
     }
+
+    fn rec(name: &str, value: f64, attrs: &[(&str, AttrValue)]) -> Record {
+        Record {
+            ts_nanos: 1,
+            start_ts_nanos: None,
+            resource: Attrs::new(),
+            scope: None,
+            name: name.into(),
+            value,
+            attrs: attrs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        }
+    }
 }
 
 /// Exercises the async filter against mocked `Backend` handles - the boundary a
@@ -86,48 +86,6 @@ mod backend_tests {
     use crate::record::{AttrValue, Attrs};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
-
-    #[derive(Default)]
-    struct Counts {
-        out: Arc<AtomicU64>,
-        dropped: Arc<AtomicU64>,
-    }
-    impl Metrics for Counts {
-        fn node(&self, _: &str, _: NodeKind) -> Arc<dyn NodeRecorder> {
-            Arc::new(CountRecorder {
-                out: self.out.clone(),
-                dropped: self.dropped.clone(),
-            })
-        }
-    }
-    struct CountRecorder {
-        out: Arc<AtomicU64>,
-        dropped: Arc<AtomicU64>,
-    }
-    impl NodeRecorder for CountRecorder {
-        fn record_out(&self) {
-            self.out.fetch_add(1, Ordering::Relaxed);
-        }
-        fn record_dropped(&self, n: u64) {
-            self.dropped.fetch_add(n, Ordering::Relaxed);
-        }
-        fn window_flushed(&self, _: u64) {}
-        fn node_error(&self) {}
-    }
-
-    fn svc_rec(svc: &str) -> Record {
-        Record {
-            ts_nanos: 1,
-            start_ts_nanos: None,
-            resource: Attrs::new(),
-            scope: None,
-            name: "m".into(),
-            value: 1.0,
-            attrs: [("service.name".to_string(), AttrValue::Str(svc.into()))]
-                .into_iter()
-                .collect(),
-        }
-    }
 
     #[tokio::test]
     async fn filter_forwards_matching_records_and_meters_drops() {
@@ -174,5 +132,47 @@ mod backend_tests {
 
         assert_eq!(out.load(Ordering::Relaxed), 1, "one forwarded");
         assert_eq!(dropped.load(Ordering::Relaxed), 1, "one dropped");
+    }
+
+    #[derive(Default)]
+    struct Counts {
+        out: Arc<AtomicU64>,
+        dropped: Arc<AtomicU64>,
+    }
+    impl Metrics for Counts {
+        fn node(&self, _: &str, _: NodeKind) -> Arc<dyn NodeRecorder> {
+            Arc::new(CountRecorder {
+                out: self.out.clone(),
+                dropped: self.dropped.clone(),
+            })
+        }
+    }
+    struct CountRecorder {
+        out: Arc<AtomicU64>,
+        dropped: Arc<AtomicU64>,
+    }
+    impl NodeRecorder for CountRecorder {
+        fn record_out(&self) {
+            self.out.fetch_add(1, Ordering::Relaxed);
+        }
+        fn record_dropped(&self, n: u64) {
+            self.dropped.fetch_add(n, Ordering::Relaxed);
+        }
+        fn window_flushed(&self, _: u64) {}
+        fn node_error(&self) {}
+    }
+
+    fn svc_rec(svc: &str) -> Record {
+        Record {
+            ts_nanos: 1,
+            start_ts_nanos: None,
+            resource: Attrs::new(),
+            scope: None,
+            name: "m".into(),
+            value: 1.0,
+            attrs: [("service.name".to_string(), AttrValue::Str(svc.into()))]
+                .into_iter()
+                .collect(),
+        }
     }
 }
