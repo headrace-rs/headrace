@@ -36,7 +36,7 @@ impl AttrValue {
     }
 }
 
-/// The unit in flight. OTel data model, flattened to what the operators need.
+/// The unit in flight. OTel data model, flattened to what the nodes need.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
     /// Sample time — for a window rollup, the window end (OTel `TimeUnixNano`).

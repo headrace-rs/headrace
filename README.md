@@ -18,6 +18,6 @@ cargo run -p headrace -- --metrics otlp run examples/latency.yaml   # export hea
 ## Status
 
 v0.1: IR, in-process backend, `generator`/`stdin` → `filter`/`window` → `stdout`.
-Next: OTLP in/out, WASM operator, NATS JetStream backend, Helm chart, MCP authoring server.
+Next: OTLP in/out, WASM transform, NATS JetStream backend, Helm chart, MCP authoring server.
 
 Apache-2.0.

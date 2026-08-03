@@ -6,8 +6,8 @@
 //! Samples are integer-valued so f64 sums are exact — otherwise float non-associativity
 //! would make "order-independent" false in the last ULP for the wrong reason.
 
-use headrace_core::operator::Window;
 use headrace_core::record::{Attrs, Record};
+use headrace_core::transform::Window;
 use headrace_ir::{Aggregate, AggregateOp, OnMissing};
 use proptest::prelude::*;
 

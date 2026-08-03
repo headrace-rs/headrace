@@ -1,4 +1,4 @@
-//! Pipeline IR: the declarative graph an operator (or, later, an agent) targets.
+//! Pipeline IR: the declarative graph a human (or, later, an agent) targets.
 //! This is *not* the data model — records in flight are OTel-shaped (see headrace-core::Record).
 
 use schemars::JsonSchema;
@@ -10,7 +10,7 @@ pub struct Pipeline {
     pub version: u32,
     pub sources: Vec<Source>,
     #[serde(default)]
-    pub operators: Vec<Operator>,
+    pub transforms: Vec<Transform>,
     pub sinks: Vec<Sink>,
 }
 
@@ -38,7 +38,7 @@ pub enum Source {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[non_exhaustive]
-pub enum Operator {
+pub enum Transform {
     /// Keep records where `key` exists (and equals `equals`, if set).
     Filter {
         id: String,
@@ -129,15 +129,15 @@ impl Source {
     }
 }
 
-impl Operator {
+impl Transform {
     pub fn id(&self) -> &str {
         match self {
-            Operator::Filter { id, .. } | Operator::Window { id, .. } => id,
+            Transform::Filter { id, .. } | Transform::Window { id, .. } => id,
         }
     }
     pub fn input(&self) -> &str {
         match self {
-            Operator::Filter { input, .. } | Operator::Window { input, .. } => input,
+            Transform::Filter { input, .. } | Transform::Window { input, .. } => input,
         }
     }
 }

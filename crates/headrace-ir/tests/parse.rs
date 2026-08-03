@@ -8,21 +8,21 @@ const EXAMPLE: &str = include_str!("../../../examples/latency.yaml");
 fn parses_the_shipped_example() {
     let p: Pipeline = serde_yaml::from_str(EXAMPLE).expect("example parses");
     assert_eq!(p.sources.len(), 1);
-    assert_eq!(p.operators.len(), 2);
+    assert_eq!(p.transforms.len(), 2);
     assert_eq!(p.sinks.len(), 1);
 
     assert!(
-        matches!(&p.operators[0], Operator::Filter { key, equals, .. }
+        matches!(&p.transforms[0], Transform::Filter { key, equals, .. }
         if key == "service.name" && equals.as_deref() == Some("checkout"))
     );
 
-    let Operator::Window {
+    let Transform::Window {
         aggregate,
         group_by,
         ..
-    } = &p.operators[1]
+    } = &p.transforms[1]
     else {
-        panic!("second operator should be a window");
+        panic!("second transform should be a window");
     };
     assert_eq!(aggregate.op, AggregateOp::Avg);
     assert_eq!(aggregate.field.as_deref(), Some("value"));

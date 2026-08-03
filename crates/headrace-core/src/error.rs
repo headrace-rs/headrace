@@ -5,7 +5,7 @@ use thiserror::Error;
 pub enum ValidationError {
     #[error("duplicate node id `{0}`")]
     DuplicateId(String),
-    #[error("input `{0}` references no source or operator")]
+    #[error("input `{0}` references no source or transform")]
     UnknownInput(String),
     #[error("output `{0}` has more than one consumer (fan-out is not yet supported)")]
     MultipleConsumers(String),

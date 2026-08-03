@@ -10,7 +10,7 @@ sources:
     services: [checkout, cart, search]
     routes: [/, /api/order, /api/items]
 
-operators:
+transforms:
   - type: filter
     id: only_checkout
     input: gen

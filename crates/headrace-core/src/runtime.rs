@@ -1,16 +1,16 @@
 use crate::backend::{Backend, InProcess};
 use crate::error::ValidationError;
 use crate::metrics::{NodeKind, NodeMetrics, SharedMetrics};
-use crate::{operator, sink, source};
+use crate::{sink, source, transform};
 use anyhow::{Result, anyhow};
-use headrace_ir::{Operator, Pipeline, Source};
+use headrace_ir::{Pipeline, Source, Transform};
 use std::collections::{HashMap, HashSet};
 use tokio::task::{JoinError, JoinSet};
 
 const CHANNEL_CAP: usize = 1024;
 
 /// Static checks: unique ids, durations parse, input refs resolve, each output has at
-/// most one consumer, and every operator is reachable from a source (no cycles/orphans).
+/// most one consumer, and every transform is reachable from a source (no cycles/orphans).
 pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
     // 1. Unique ids across all nodes; collect the ids that can be referenced as an input.
     let mut all = HashSet::new();
@@ -23,7 +23,7 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
     for s in &p.sources {
         outputs.insert(s.id());
     }
-    for o in &p.operators {
+    for o in &p.transforms {
         outputs.insert(o.id());
     }
 
@@ -33,22 +33,22 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
             parse_duration(id, interval)?;
         }
     }
-    for o in &p.operators {
-        if let Operator::Window { id, size, .. } = o {
+    for o in &p.transforms {
+        if let Transform::Window { id, size, .. } = o {
             parse_duration(id, size)?;
         }
     }
 
     // 3. Every input resolves, and each output has at most one consumer.
     let mut consumed = HashSet::new();
-    for o in &p.operators {
+    for o in &p.transforms {
         check_edge(o.input(), &outputs, &mut consumed)?;
     }
     for s in &p.sinks {
         check_edge(s.input(), &outputs, &mut consumed)?;
     }
 
-    // 4. Every operator is reachable from a source — rejects cycles and orphans.
+    // 4. Every transform is reachable from a source — rejects cycles and orphans.
     check_reachable(p)?;
     Ok(())
 }
@@ -57,7 +57,7 @@ fn node_ids(p: &Pipeline) -> impl Iterator<Item = &str> {
     p.sources
         .iter()
         .map(|s| s.id())
-        .chain(p.operators.iter().map(|o| o.id()))
+        .chain(p.transforms.iter().map(|o| o.id()))
         .chain(p.sinks.iter().map(|s| s.id()))
 }
 
@@ -85,11 +85,11 @@ fn check_edge<'a>(
     Ok(())
 }
 
-/// BFS forward from the sources over `input` edges. Any operator not reached is either
-/// orphaned or part of a cycle (two operators feeding each other pass every other check).
+/// BFS forward from the sources over `input` edges. Any transform not reached is either
+/// orphaned or part of a cycle (two transforms feeding each other pass every other check).
 fn check_reachable(p: &Pipeline) -> Result<(), ValidationError> {
     let mut consumers: HashMap<&str, Vec<&str>> = HashMap::new();
-    for o in &p.operators {
+    for o in &p.transforms {
         consumers.entry(o.input()).or_default().push(o.id());
     }
     let mut seen: HashSet<&str> = p.sources.iter().map(|s| s.id()).collect();
@@ -101,7 +101,7 @@ fn check_reachable(p: &Pipeline) -> Result<(), ValidationError> {
             }
         }
     }
-    for o in &p.operators {
+    for o in &p.transforms {
         if !seen.contains(o.id()) {
             return Err(ValidationError::Unreachable(o.id().to_string()));
         }
@@ -132,14 +132,14 @@ pub async fn run(p: Pipeline, metrics: SharedMetrics) -> Result<()> {
             r
         });
     }
-    for o in &p.operators {
+    for o in &p.transforms {
         let rx = be.consumer(o.input());
         let tx = be.producer(o.id());
-        let nm = NodeMetrics::bind(&metrics, o.id(), op_kind(o));
+        let nm = NodeMetrics::bind(&metrics, o.id(), transform_kind(o));
         let node = nm.clone();
         let op = o.clone();
         work.spawn(async move {
-            let r = operator::run(op, rx, tx, nm).await;
+            let r = transform::run(op, rx, tx, nm).await;
             record_error(&r, &node);
             r
         });
@@ -160,7 +160,7 @@ pub async fn run(p: Pipeline, metrics: SharedMetrics) -> Result<()> {
 
     tracing::info!(
         sources = p.sources.len(),
-        operators = p.operators.len(),
+        transforms = p.transforms.len(),
         sinks = p.sinks.len(),
         "pipeline running; Ctrl-C/SIGTERM to stop"
     );
@@ -203,11 +203,11 @@ fn record_error(result: &Result<()>, nm: &NodeMetrics) {
     }
 }
 
-fn op_kind(o: &Operator) -> NodeKind {
+fn transform_kind(o: &Transform) -> NodeKind {
     match o {
-        Operator::Filter { .. } => NodeKind::Filter,
-        Operator::Window { .. } => NodeKind::Window,
-        // Forward-compat: an unknown operator fails in `operator::run`; kind is cosmetic.
+        Transform::Filter { .. } => NodeKind::Filter,
+        Transform::Window { .. } => NodeKind::Window,
+        // Forward-compat: an unknown transform fails in `transform::run`; kind is cosmetic.
         _ => NodeKind::Filter,
     }
 }
@@ -268,7 +268,7 @@ mod tests {
 
     const GOOD: &str = r#"
         sources:   [{ type: generator, id: gen, interval: 200ms }]
-        operators: [{ type: window, id: w, input: gen, size: 5s, aggregate: { op: count } }]
+        transforms: [{ type: window, id: w, input: gen, size: 5s, aggregate: { op: count } }]
         sinks:     [{ type: stdout, id: out, input: w }]
     "#;
 
@@ -282,7 +282,7 @@ mod tests {
         let p = pipeline(
             r#"
             sources: [{ type: generator, id: dup, interval: 1s }]
-            operators: [{ type: filter, id: dup, input: dup, key: k }]
+            transforms: [{ type: filter, id: dup, input: dup, key: k }]
             sinks: [{ type: stdout, id: out, input: dup }]
         "#,
         );
@@ -308,7 +308,7 @@ mod tests {
         let p = pipeline(
             r#"
             sources: [{ type: generator, id: gen, interval: 1s }]
-            operators: [{ type: filter, id: f, input: gen, key: k }]
+            transforms: [{ type: filter, id: f, input: gen, key: k }]
             sinks:
               - { type: stdout, id: a, input: gen }
               - { type: stdout, id: b, input: gen }
@@ -325,7 +325,7 @@ mod tests {
         let p = pipeline(
             r#"
             sources: [{ type: generator, id: gen, interval: 1s }]
-            operators: [{ type: window, id: w, input: gen, size: "5 furlongs", aggregate: { op: count } }]
+            transforms: [{ type: window, id: w, input: gen, size: "5 furlongs", aggregate: { op: count } }]
             sinks: [{ type: stdout, id: out, input: w }]
         "#,
         );
@@ -342,7 +342,7 @@ mod tests {
         let p = pipeline(
             r#"
             sources: [{ type: generator, id: gen, interval: 1s }]
-            operators:
+            transforms:
               - { type: filter, id: a, input: b, key: k }
               - { type: filter, id: b, input: a, key: k }
             sinks: [{ type: stdout, id: out, input: gen }]
@@ -388,7 +388,7 @@ mod tests {
         let p = pipeline(
             r#"
             sources: [{ type: generator, id: g, interval: 5ms }]
-            operators:
+            transforms:
               - { type: window, id: w, input: g, size: 1h,
                   aggregate: { op: avg, field: nope, on_missing: error } }
             sinks: [{ type: stdout, id: o, input: w }]

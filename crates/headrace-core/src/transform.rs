@@ -2,25 +2,25 @@ use crate::backend::{Consumer, Producer};
 use crate::metrics::NodeMetrics;
 use crate::record::{AttrValue, Attrs, Record, now_nanos};
 use anyhow::{Result, bail};
-use headrace_ir::{Aggregate, AggregateOp, OnMissing, Operator};
+use headrace_ir::{Aggregate, AggregateOp, OnMissing, Transform};
 use std::collections::HashMap;
 
 pub async fn run(
-    op: Operator,
+    op: Transform,
     rx: Box<dyn Consumer>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
 ) -> Result<()> {
     match op {
-        Operator::Filter { key, equals, .. } => filter(key, equals, rx, tx, nm).await,
-        Operator::Window {
+        Transform::Filter { key, equals, .. } => filter(key, equals, rx, tx, nm).await,
+        Transform::Window {
             size,
             group_by,
             aggregate,
             ..
         } => window(size, group_by, aggregate, rx, tx, nm).await,
         // Forward-compat: an IR node type this build does not implement.
-        other => bail!("unsupported operator `{}`", other.id()),
+        other => bail!("unsupported transform `{}`", other.id()),
     }
 }
 
@@ -57,7 +57,7 @@ async fn filter(
 
 // ---- window ----
 
-/// A key part per `group_by` dimension, in the operator's declared order.
+/// A key part per `group_by` dimension, in the transform's declared order.
 ///
 /// Canonical and hashable: types stay distinct (`Int(1)` ≠ `Str("1")`) and a
 /// missing attribute (`Absent`) differs from an empty string, so distinct groups
@@ -134,7 +134,7 @@ impl Agg {
     }
 }
 
-/// The stateful core of the window operator: pure, synchronous, testable in isolation.
+/// The stateful core of the window transform: pure, synchronous, testable in isolation.
 /// The async driver below owns only timing and I/O.
 pub struct Window {
     group_by: Vec<String>,
@@ -449,7 +449,7 @@ mod tests {
     }
 }
 
-/// Exercises the async operators against mocked `Backend` handles — the seam a
+/// Exercises the async transforms against mocked `Backend` handles — the seam a
 /// networked backend swaps into. Run with `--features mocks`.
 #[cfg(all(test, feature = "mocks"))]
 mod seam_tests {

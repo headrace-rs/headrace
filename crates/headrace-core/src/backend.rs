@@ -21,7 +21,7 @@ pub trait Backend: Send {
     fn consumer(&mut self, id: &str) -> Box<dyn Consumer>;
 }
 
-/// Writes records to a node's output stream. `Sync`, because the operators call `send`
+/// Writes records to a node's output stream. `Sync`, because the node tasks call `send`
 /// on a shared `&dyn Producer` held across `.await`.
 #[cfg_attr(feature = "mocks", mockall::automock)]
 #[async_trait]

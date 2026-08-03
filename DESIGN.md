@@ -7,7 +7,7 @@ scaled on Kubernetes over a partitioned backend.
 **Principles**
 
 - Not infrastructure, a layer. No broker, no storage engine, no bespoke controller — rent those.
-- OTLP at the edges; a fixed operator catalog in the middle; WASM as the only escape hatch.
+- OTLP at the edges; a fixed transform catalog in the middle; WASM as the only escape hatch.
 - One binary, deployment topology chosen at startup.
 
 ## Two schemas, kept separate
@@ -15,7 +15,7 @@ scaled on Kubernetes over a partitioned backend.
 | | What it is | Shape |
 |---|---|---|
 | **Data model** | The records in flight | OTel / OTLP (`Record` = flattened OTel data model) |
-| **IR** | The program that processes them | Headrace's own operator-DAG spec (`headrace-ir`), OTel-*aware* but not OTLP |
+| **IR** | The program that processes them | Headrace's own transform-DAG spec (`headrace-ir`), OTel-*aware* but not OTLP |
 
 OTLP is decoded to an internal `Record` at ingest and re-encoded at egress. The columnar
 fast path (OTel-Arrow / OTAP) is an internal optimization behind that boundary — invisible
@@ -30,15 +30,15 @@ flowchart LR
     src[Source<br/>OTLP in]
     snk[Sink<br/>OTLP out / remote-write]
   end
-  subgraph proc[Operators: internal Record]
+  subgraph proc[Transforms: internal Record]
     f[filter / map]
     w["window<br/>(stateful: group_by + aggregate)"]
   end
   src --> f --> w --> snk
 ```
 
-Stateless operators (`filter`, `map`) hold nothing. State lives only in windowing
-operators, keyed by `group_by` — which is what makes horizontal scaling tractable.
+Stateless transforms (`filter`, `map`) hold nothing. State lives only in windowing
+transforms, keyed by `group_by` — which is what makes horizontal scaling tractable.
 
 ## Run modes
 
@@ -99,9 +99,9 @@ Exactly-once is out of scope — that's Flink's fight.
 
 ## Stateful semantics
 
-What the windowing operators keep, and how it stays correct under scale and failure.
+What the windowing transforms keep, and how it stays correct under scale and failure.
 
-**Keyed on.** State is keyed by `(operator_id, group_key, window)`, where `group_key` is the
+**Keyed on.** State is keyed by `(transform_id, group_key, window)`, where `group_key` is the
 `group_by` tuple. That same key is the shuffle partition key (`Backend::Key` bytes), so a
 group's records — and therefore its state — always land on one worker.
 
@@ -146,15 +146,15 @@ has one consumer (fan-out is a later `tee`). Full JSON Schema: `headrace schema`
 | source | `generator` | synthetic metrics (dev/test) |
 | source | `stdin` | one JSON `Record` per line |
 | source | `otlp` | *next* — OTLP/gRPC receiver |
-| operator | `filter` | keep where `key` exists / equals |
-| operator | `window` | tumbling; `group_by` + `aggregate {count,sum,min,max,avg}`; `on_missing {skip,error}` for absent fields |
-| operator | `map`, `wasm` | *next* |
+| transform | `filter` | keep where `key` exists / equals |
+| transform | `window` | tumbling; `group_by` + `aggregate {count,sum,min,max,avg}`; `on_missing {skip,error}` for absent fields |
+| transform | `map`, `wasm` | *next* |
 | sink | `stdout` | text / json |
 | sink | `otlp` | *next* — OTLP out / Prometheus remote-write |
 
 ```yaml
 sources:  [{ type: generator, id: gen, interval: 200ms }]
-operators:
+transforms:
   - { type: filter, id: only_checkout, input: gen, key: service.name, equals: checkout }
   - type: window
     id: rollup
@@ -186,7 +186,7 @@ that's the changelog/PVC (see *Stateful semantics*).
 
 ## Internal record model
 
-`crates/headrace-core/src/record.rs` — the OTel data model, flattened to what operators touch:
+`crates/headrace-core/src/record.rs` — the OTel data model, flattened to what nodes touch:
 
 ```
 Record { ts_nanos, start_ts_nanos: Option, resource: Attrs, scope, name, value: f64, attrs: Attrs }
@@ -220,7 +220,7 @@ flowchart TD
 ```
 
 - `headrace-ir` — IR types + JSON Schema. No runtime deps.
-- `headrace-core` — record model, `Backend` trait + in-process impl, operators, runtime, `Metrics` seam.
+- `headrace-core` — record model, `Backend` trait + in-process impl, transforms, runtime, `Metrics` seam.
 - `headrace` — CLI + OTel metrics exporter (the only crate that depends on OpenTelemetry).
 
 ## Roadmap
@@ -228,7 +228,7 @@ flowchart TD
 - **v0.1 (now)** — IR + static validation (refs, cycles, durations), in-process backend,
   generator/stdin → filter/window → stdout. Task supervision (fail fast on node error/panic),
   graceful drain on SIGINT/SIGTERM (second signal forces), OTel self-metrics. Runs.
-- **v0.2** — OTLP source/sink, WASM operator, NATS JetStream backend, Helm chart, MCP server
+- **v0.2** — OTLP source/sink, WASM transform, NATS JetStream backend, Helm chart, MCP server
   for agentic authoring against the IR schema, docs site (mermaid-rendering — Vocs or mdBook)
   on Cloudflare Pages, and branding/logo.
 - **v0.3** — state checkpointing, event-time windows + watermarks, `map`/`join`, `Pipeline` CRD.
