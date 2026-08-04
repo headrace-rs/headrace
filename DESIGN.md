@@ -282,14 +282,81 @@ flowchart TD
 - `headrace-core` - record model, `Backend` trait + in-process impl, transforms, runtime, `Metrics` boundary.
 - `headrace` - CLI + OTel metrics exporter (the only crate that depends on OpenTelemetry).
 
+## Testing
+
+Unit and property tests live with the code (`#[cfg(test)]` and `tests/`); time-dependent behavior
+is driven by the paused tokio clock, never wall-clock sleeps. As OTLP lands, the whole path gets
+end-to-end coverage as a **cargo integration test** (`crates/headrace/tests/otlp_e2e.rs`), no
+external services, run by plain `cargo test`:
+
+1. Start Headrace's OTLP receiver on an ephemeral port, running a small pipeline
+   (`filter -> window` over a metric's value).
+2. Push OTLP metrics with an `opentelemetry-otlp` exporter - a known series, so the expected rollup
+   is deterministic.
+3. Headrace's OTLP sink exports to a mock OTLP receiver stood up inside the test (a tonic server
+   that records requests).
+4. Assert the aggregated value, labels, and window bounds on what the mock received.
+
+A heavier variant behind a `docker` feature swaps the mock receiver for a real `otelcol` via
+testcontainers, to prove wire-compatibility with the Collector.
+
+## Packaging and distribution
+
+A **Helm chart** (v0.2) under `charts/headrace` deploys what v0.1+OTLP is: the `headrace`
+binary as a Deployment, a Service for the OTLP receiver (gRPC 4317 / HTTP 4318), and the pipeline IR
+mounted from a ConfigMap. Values toggle the backend (`backend: inprocess|nats`) and, later, a KEDA
+`ScaledObject`; `appVersion` tracks the crate version.
+
+Published to **GHCR** as an OCI artifact - GitHub Container Registry (`ghcr.io`), which is part of
+GitHub, not a Google/GCP service. CI packages the chart and `helm push`es it; users install with:
+
+```sh
+helm install headrace oci://ghcr.io/headrace-rs/charts/headrace
+```
+
+No separate chart repo and no third-party account: the chart sits beside the container images,
+pushed with the Actions `GITHUB_TOKEN`. (The classic `helm/chart-releaser-action` publishing an
+`index.yaml` to GitHub Pages stays a fallback.) The near-term goal is to drop this into a real
+cluster, point an OTLP exporter at it, run an aggregation, and sink to a collector - the OTLP
+round-trip test above, but live.
+
 ## Roadmap
 
-- **v0.1 (now)** - IR with static validation (refs, cycles, durations), in-process backend,
-  generator/stdin -> filter/window -> stdout. Task supervision (fail fast on node error or panic),
-  graceful drain on SIGINT/SIGTERM (a second signal forces), OTel self-metrics. Runs.
-- **v0.2** - OTLP source/sink, WASM transform, NATS JetStream backend, Helm chart, MCP server for
-  agentic authoring against the IR schema, a local read-only state view, docs site (Vocs or mdBook,
-  mermaid-rendering) on Cloudflare Pages, and branding/logo.
-- **v0.3** - state checkpointing, event-time windows and watermarks, sliding and session windows
-  with lateness and staleness, `map` and `join`, cluster-wide interactive state queries, and the
-  `Pipeline` CRD.
+**v0.1 (done)** - IR with static validation (refs, cycles, durations), in-process backend,
+generator/stdin -> filter/window -> stdout, task supervision (fail fast on node error or panic),
+graceful drain on SIGINT/SIGTERM (a second signal forces), OTel self-metrics.
+
+**v0.2 - make it real and deployable**, in sequence:
+
+1. **OTLP source/sink** - ingest and emit real OTLP; decode to `Record` with delta/cumulative
+   normalization on ingest, encode back on egress. Nothing downstream is useful until this exists.
+2. **OTLP round-trip integration test** (see *Testing*) - locks the wire contract before we build on it.
+3. **Helm chart + GHCR** (see *Packaging and distribution*) - so it can run in a real cluster.
+4. **NATS JetStream backend** - the scaled path: partitioned subjects, durable consumers, static
+   assignment (ADR-0008).
+5. **WASM transform** - the escape hatch for custom logic.
+6. **MCP authoring server + local state view** - an agent authors IR against the schema;
+   `headrace inspect` / `/state` reads current accumulators.
+7. **Docs site** (Vocs or mdBook, mermaid) on Cloudflare Pages.
+
+Branding and logo: done.
+
+**v0.3 - correctness and scale at rest**, in sequence.
+
+*Correctness (windowing):*
+
+1. **Event-time + watermarks** - place windows by the record's own time and close them on a
+   watermark (`max_event_time - allowed_lateness`). The foundation the rest of this list builds on.
+2. **Sliding and session windows** - overlapping and gap-based windows, with per-window lateness
+   and state staleness (a TTL that evicts idle keys). Built on watermarks (ADR-0009).
+3. **`map` + `join`** - a co-partitioned join plus an expression transform; unlocks cross-series
+   arithmetic like `a - b` (ADR-0010). Needs event-time windows for "the same window" to mean something.
+
+*Scale at rest (durability and ops):*
+
+4. **State checkpointing** - mutations to a compacted changelog, replayed on rebalance, with RocksDB
+   spill when state outgrows RAM. Workers become a StatefulSet; at-most-once becomes durable.
+5. **Interactive state queries** - cluster-wide reads over the changelog (the Kafka-Streams
+   materialized-view model). Depends on the changelog from step 4.
+6. **`Pipeline` CRD + operator** - `spec` is the IR, `status` reports observed state; a thin
+   operator reconciles CRs into Deployments and backend subjects. The lifecycle layer, last.
