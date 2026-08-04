@@ -1,19 +1,16 @@
 # Release automation. All crates share one version (version.workspace), so we cut a
-# single workspace release: one v{version} tag that cargo-dist turns into a GitHub
-# release with binaries. See .github/workflows/release-plz.yml and release.yml.
+# single workspace release: one v{version} tag and one GitHub release for the binary.
+# See .github/workflows/release.yml.
 
 [workspace]
 # Private until launch: no crates.io publish yet. Flip to true and add the
 # CARGO_REGISTRY_TOKEN secret to start publishing.
 publish = false
-# One tag for the whole workspace, not one per crate.
+# One tag and release for the whole workspace, not one per crate.
 git_tag_name = "v{{ version }}"
-# cargo-dist creates the GitHub release (with binaries) from the tag, so release-plz
-# must not also create one.
-git_release_enable = false
 
-# Only the binary drives the tag; the libraries bump in lockstep but are not released
-# or tagged on their own. This keeps a single v{version} tag and one cargo-dist run.
+# Only the binary drives the tag and release; the libraries bump in lockstep but are
+# not released or tagged on their own.
 [[package]]
 name = "headrace-ir"
 release = false
