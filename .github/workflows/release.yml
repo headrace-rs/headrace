@@ -6,43 +6,46 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
-# One release process at a time; do not cancel one mid-flight.
+# One release at a time; do not cancel one mid-flight.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  # Open or update the release PR: version bump plus changelog from the conventional
-  # commits since the last release. Merge it to cut a release.
-  release-pr:
-    name: Release PR
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Open the release PR
-        uses: release-plz/action@v0.5
-        with:
-          command: release-pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # After the release PR is merged, tag the release and create the GitHub release.
   release:
-    name: Tag and publish
+    name: Release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full history and tags so knope can read the commits since the last release.
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Tag and create the GitHub release
-        uses: release-plz/action@v0.5
+      - uses: knope-dev/action@v2.1.2
         with:
-          command: release
+          version: 0.23.0
+      - name: Configure the release identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      # knope bumps the version, updates the changelog, tags, and creates the GitHub
+      # release from the conventional commits since the last tag. Pushing with the
+      # built-in token does not retrigger this workflow, so there is no release loop.
+      # `no_release` (no releasable commits since the last tag) is a normal no-op, not
+      # a failure.
+      - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          out="$(knope release 2>&1)"
+          code=$?
+          echo "$out"
+          if [ "$code" -eq 0 ]; then
+            exit 0
+          elif echo "$out" | grep -q 'no_release'; then
+            echo "::notice::No releasable commits since the last release; nothing to do."
+            exit 0
+          else
+            exit "$code"
+          fi
