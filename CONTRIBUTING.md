@@ -48,6 +48,12 @@ Run a pipeline:
 cargo run -p headrace -- run examples/latency.yaml
 ```
 
+Enable the local git hooks once (Conventional Commits check on `commit-msg`):
+
+```shell
+git config core.hooksPath .githooks
+```
+
 ## Rust style
 
 Follow the [Rust Style Guide](https://doc.rust-lang.org/nightly/style-guide/); `rustfmt` and
