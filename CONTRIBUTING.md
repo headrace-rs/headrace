@@ -48,10 +48,12 @@ Run a pipeline:
 cargo run -p headrace -- run examples/latency.yaml
 ```
 
-Enable the local git hooks once (Conventional Commits check on `commit-msg`):
+Install [prek](https://github.com/j178/prek) and enable the git hooks once. They run typos
+and rustfmt on commit, a Conventional Commits check on the message, and clippy on push:
 
 ```shell
-git config core.hooksPath .githooks
+brew install prek   # or: cargo install --locked prek
+prek install
 ```
 
 ## Rust style
