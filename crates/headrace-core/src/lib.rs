@@ -8,6 +8,6 @@ pub mod source;
 pub mod transform;
 
 pub use error::ValidationError;
-pub use metrics::{Metrics, NodeMetrics, NodeRecorder, NoopMetrics, SharedMetrics};
+pub use metrics::{Metrics, NodeRecorder, NoopMetrics, SharedMetrics};
 pub use record::{AttrValue, Record};
-pub use runtime::{ExternalNodes, NoExternalNodes, NodeFuture, run, run_with, validate};
+pub use runtime::{run, validate};

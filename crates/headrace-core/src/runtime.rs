@@ -1,12 +1,10 @@
-use crate::backend::{Backend, Consumer, Producer};
+use crate::backend::Backend;
 use crate::error::ValidationError;
 use crate::metrics::{NodeKind, NodeMetrics, SharedMetrics};
 use crate::{sink, source, transform};
 use anyhow::{Result, anyhow};
-use headrace_ir::{Pipeline, Sink, Source, Transform};
+use headrace_ir::{Pipeline, Source, Transform};
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
-use std::pin::Pin;
 use tokio::task::{JoinError, JoinSet};
 
 /// Static checks: unique ids, durations parse, input refs resolve, each output has at
@@ -109,71 +107,13 @@ fn check_reachable(p: &Pipeline) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// A node's task: runs one source, transform, or sink to completion.
-pub type NodeFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
-/// Builds tasks for source and sink kinds that `headrace-core` does not implement itself
-/// (OTLP lives in `headrace-otlp`). The runtime handles its built-in generator/stdin/stdout
-/// directly and delegates every other variant here.
-pub trait ExternalNodes: Send + Sync {
-    fn source(&self, src: Source, tx: Box<dyn Producer>, nm: NodeMetrics) -> Result<NodeFuture>;
-    fn sink(&self, sink: Sink, rx: Box<dyn Consumer>, nm: NodeMetrics) -> Result<NodeFuture>;
-}
-
-/// The default: no external kinds, so an unrecognized source or sink is a config error.
-pub struct NoExternalNodes;
-
-impl ExternalNodes for NoExternalNodes {
-    fn source(&self, src: Source, _tx: Box<dyn Producer>, _nm: NodeMetrics) -> Result<NodeFuture> {
-        Err(anyhow!("unsupported source `{}`", src.id()))
-    }
-    fn sink(&self, sink: Sink, _rx: Box<dyn Consumer>, _nm: NodeMetrics) -> Result<NodeFuture> {
-        Err(anyhow!("unsupported sink `{}`", sink.id()))
-    }
-}
-
-fn build_source(
-    src: Source,
-    tx: Box<dyn Producer>,
-    nm: NodeMetrics,
-    external: &dyn ExternalNodes,
-) -> Result<NodeFuture> {
-    match &src {
-        Source::Generator { .. } | Source::Stdin { .. } => Ok(Box::pin(source::run(src, tx, nm))),
-        _ => external.source(src, tx, nm),
-    }
-}
-
-fn build_sink(
-    sink: Sink,
-    rx: Box<dyn Consumer>,
-    nm: NodeMetrics,
-    external: &dyn ExternalNodes,
-) -> Result<NodeFuture> {
-    match &sink {
-        Sink::Stdout { .. } => Ok(Box::pin(sink::run(sink, rx, nm))),
-        _ => external.sink(sink, rx, nm),
-    }
-}
-
-/// Wire the graph onto `backend` and run, using only the built-in node kinds.
-pub async fn run(p: Pipeline, backend: impl Backend, metrics: SharedMetrics) -> Result<()> {
-    run_with(p, backend, metrics, &NoExternalNodes).await
-}
-
-/// Like [`run`], but source and sink kinds beyond the built-ins are built by `external`
-/// (for example OTLP, from `headrace-otlp`).
+/// Wire the graph onto `backend` and run.
 ///
 /// Runs until a shutdown signal (Ctrl-C / SIGTERM), a node failing or panicking
 /// (fail fast, surfacing the error), or all nodes completing on their own. On a
 /// signal it drains best-effort: sources stop, their dropped senders close the
 /// graph so windows flush and sinks empty; a second signal forces an abort.
-pub async fn run_with(
-    p: Pipeline,
-    mut backend: impl Backend,
-    metrics: SharedMetrics,
-    external: &dyn ExternalNodes,
-) -> Result<()> {
+pub async fn run(p: Pipeline, mut backend: impl Backend, metrics: SharedMetrics) -> Result<()> {
     validate(&p)?;
     let mut sources: JoinSet<Result<()>> = JoinSet::new();
     let mut work: JoinSet<Result<()>> = JoinSet::new();
@@ -182,9 +122,9 @@ pub async fn run_with(
         let tx = backend.producer(s.id());
         let nm = NodeMetrics::bind(&metrics, s.id(), NodeKind::Source);
         let node = nm.clone();
-        let fut = build_source(s.clone(), tx, nm, external)?;
+        let src = s.clone();
         sources.spawn(async move {
-            let r = fut.await;
+            let r = source::run(src, tx, nm).await;
             record_error(&r, &node);
             r
         });
@@ -205,9 +145,9 @@ pub async fn run_with(
         let rx = backend.consumer(s.input());
         let nm = NodeMetrics::bind(&metrics, s.id(), NodeKind::Sink);
         let node = nm.clone();
-        let fut = build_sink(s.clone(), rx, nm, external)?;
+        let snk = s.clone();
         work.spawn(async move {
-            let r = fut.await;
+            let r = sink::run(snk, rx, nm).await;
             record_error(&r, &node);
             r
         });
