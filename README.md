@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./brand/assets/logo-dark.svg">
-    <img src="./brand/assets/logo.svg" alt="Headrace" width="76">
-  </picture>
+  <img src="./brand/assets/avatar.svg" alt="Headrace" width="84">
 </p>
 
 # Headrace
