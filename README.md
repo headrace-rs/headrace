@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./brand/assets/logo-dark.svg">
+    <img src="./brand/assets/logo.svg" alt="Headrace" width="76">
+  </picture>
+</p>
+
 # Headrace
 
 [![CI](https://img.shields.io/github/actions/workflow/status/headrace-rs/headrace/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/headrace-rs/headrace/actions/workflows/ci.yml)
