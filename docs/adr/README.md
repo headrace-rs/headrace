@@ -19,3 +19,6 @@ Significant architectural decisions are recorded here as ADRs, using the
 - [0004](./0004-otlp-at-the-boundaries-uniform-record-model.md) - OTLP at the boundaries, uniform Record model
 - [0005](./0005-event-time-windows-and-mergeable-aggregates.md) - Event-time windows with mergeable aggregates
 - [0006](./0006-call-processing-nodes-transforms.md) - Call processing nodes "transforms"
+- [0007](./0007-keyed-state-is-private-to-a-transform.md) - Keyed state is private to a transform
+- [0008](./0008-static-partition-assignment.md) - Static partition assignment; defer consistent hashing
+- [0009](./0009-sliding-and-session-windows.md) - Sliding and session windows, with lateness and staleness
