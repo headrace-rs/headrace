@@ -4,11 +4,17 @@ use crate::record::Record;
 use anyhow::{Result, bail};
 use headrace_ir::{Format, Sink};
 
-pub async fn run(sink: Sink, mut rx: Box<dyn Consumer>, nm: NodeMetrics) -> Result<()> {
-    let format = match sink {
-        Sink::Stdout { format, .. } => format,
+pub async fn run(sink: Sink, rx: Box<dyn Consumer>, nm: NodeMetrics) -> Result<()> {
+    match sink {
+        Sink::Stdout { format, .. } => stdout(format, rx, nm).await,
+        #[cfg(feature = "otlp")]
+        Sink::Otlp { endpoint, .. } => crate::otlp::exporter::run(endpoint, rx, nm).await,
+        // Forward-compat: an IR sink type this build does not implement.
         other => bail!("unsupported sink `{}`", other.id()),
-    };
+    }
+}
+
+async fn stdout(format: Format, mut rx: Box<dyn Consumer>, nm: NodeMetrics) -> Result<()> {
     while let Some(rec) = rx.recv().await {
         match format {
             Format::Json => println!("{}", json(&rec)?),

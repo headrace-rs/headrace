@@ -15,6 +15,8 @@ pub async fn run(src: Source, tx: Box<dyn Producer>, nm: NodeMetrics) -> Result<
             ..
         } => generator(&metric, &interval, services, routes, tx, &nm).await,
         Source::Stdin { .. } => stdin(tx, &nm).await,
+        #[cfg(feature = "otlp")]
+        Source::Otlp { listen, .. } => crate::otlp::receiver::run(listen, tx, nm).await,
         // Forward-compat: an IR source type this build does not implement.
         other => bail!("unsupported source `{}`", other.id()),
     }

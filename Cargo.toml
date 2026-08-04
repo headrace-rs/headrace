@@ -29,4 +29,6 @@ opentelemetry = "0.32"
 opentelemetry_sdk = { version = "0.32", features = ["metrics"] }
 opentelemetry-otlp = { version = "0.32", features = ["metrics", "grpc-tonic"] }
 opentelemetry-stdout = { version = "0.32", features = ["metrics"] }
+opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "metrics"] }
+tonic = "0.14"
 proptest = "1"

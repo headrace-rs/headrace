@@ -16,10 +16,14 @@ humantime.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
+opentelemetry-proto = { workspace = true, optional = true }
 
 [features]
 # Exposes automock-generated Backend/Producer/Consumer mocks for downstream tests.
 mocks = ["dep:mockall"]
+# OTLP source (gRPC receiver) and sink (gRPC exporter).
+otlp = ["dep:tonic", "dep:opentelemetry-proto"]
 
 [dev-dependencies]
 serde_yaml.workspace = true
