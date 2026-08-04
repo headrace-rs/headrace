@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - name: Open the release PR
-        uses: release-plz/action@v0.13
+        uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
@@ -41,7 +41,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - name: Tag and create the GitHub release
-        uses: release-plz/action@v0.13
+        uses: release-plz/action@v0.5
         with:
           command: release
         env:
