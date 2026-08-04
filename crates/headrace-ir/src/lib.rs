@@ -32,7 +32,12 @@ pub enum Source {
     },
     /// One JSON-encoded Record per line on stdin.
     Stdin { id: String },
-    // Otlp { id, listen } - next.
+    /// OTLP/gRPC receiver; `listen` is the bind address (default `0.0.0.0:4317`).
+    Otlp {
+        id: String,
+        #[serde(default = "d_otlp_listen")]
+        listen: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -110,7 +115,12 @@ pub enum Sink {
         #[serde(default)]
         format: Format,
     },
-    // Otlp { id, input, endpoint } - next.
+    /// OTLP/gRPC exporter to `endpoint` (e.g. `http://collector:4317`).
+    Otlp {
+        id: String,
+        input: String,
+        endpoint: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -124,7 +134,7 @@ pub enum Format {
 impl Source {
     pub fn id(&self) -> &str {
         match self {
-            Source::Generator { id, .. } | Source::Stdin { id } => id,
+            Source::Generator { id, .. } | Source::Stdin { id } | Source::Otlp { id, .. } => id,
         }
     }
 }
@@ -145,12 +155,12 @@ impl Transform {
 impl Sink {
     pub fn id(&self) -> &str {
         match self {
-            Sink::Stdout { id, .. } => id,
+            Sink::Stdout { id, .. } | Sink::Otlp { id, .. } => id,
         }
     }
     pub fn input(&self) -> &str {
         match self {
-            Sink::Stdout { input, .. } => input,
+            Sink::Stdout { input, .. } | Sink::Otlp { input, .. } => input,
         }
     }
 }
@@ -166,4 +176,7 @@ fn d_metric() -> String {
 }
 fn d_interval() -> String {
     "500ms".into()
+}
+fn d_otlp_listen() -> String {
+    "0.0.0.0:4317".into()
 }

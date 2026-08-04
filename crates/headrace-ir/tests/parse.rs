@@ -47,6 +47,29 @@ fn applies_defaults_to_a_minimal_source() {
 }
 
 #[test]
+fn parses_otlp_source_and_sink() {
+    let p: Pipeline = serde_yaml::from_str(
+        r#"
+        sources: [{ type: otlp, id: in }]
+        sinks: [{ type: otlp, id: out, input: in, endpoint: "http://collector:4317" }]
+        "#,
+    )
+    .unwrap();
+    let Source::Otlp { listen, .. } = &p.sources[0] else {
+        panic!("expected otlp source");
+    };
+    assert_eq!(listen, "0.0.0.0:4317"); // defaulted
+    let Sink::Otlp {
+        input, endpoint, ..
+    } = &p.sinks[0]
+    else {
+        panic!("expected otlp sink");
+    };
+    assert_eq!(input, "in");
+    assert_eq!(endpoint, "http://collector:4317");
+}
+
+#[test]
 fn pipeline_roundtrips_through_json() {
     let p: Pipeline = serde_yaml::from_str(EXAMPLE).unwrap();
     let json = serde_json::to_string(&p).unwrap();
@@ -61,6 +84,7 @@ fn schema_advertises_the_node_catalog() {
     for needle in [
         "Pipeline",
         "generator",
+        "otlp",
         "window",
         "on_missing",
         "AggregateOp",
