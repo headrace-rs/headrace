@@ -22,3 +22,4 @@ Significant architectural decisions are recorded here as ADRs, using the
 - [0007](./0007-keyed-state-is-private-to-a-transform.md) - Keyed state is private to a transform
 - [0008](./0008-static-partition-assignment.md) - Static partition assignment; defer consistent hashing
 - [0009](./0009-sliding-and-session-windows.md) - Sliding and session windows, with lateness and staleness
+- [0010](./0010-cross-series-arithmetic.md) - Cross-series arithmetic (proposed)
