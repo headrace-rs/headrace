@@ -58,6 +58,13 @@ cargo test --workspace --all-features
   blocking concern).
 - Document public items with rustdoc; keep it accurate and free of drift.
 
+## CI workflows
+
+- GitHub Actions live in `.github/workflows`. Write the workflow `name:`, every job name, and
+  every named step in Sentence case, matching `ci.yml` (e.g. `name: CI`, `Check formatting`).
+- Keep workflows minimal and scoped to one purpose; prefer the built-in `GITHUB_TOKEN` over a
+  personal access token.
+
 ## Architecture
 
 - Record architectural decisions as [ADRs](./docs/adr/); propose one before changing the
