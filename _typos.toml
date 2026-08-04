@@ -1,0 +1,4 @@
+# "PNGs"/"PNG" get split by the tokenizer into `PN`, which typos wants to "correct"
+# to `ON`. It is not a typo.
+[default.extend-words]
+PN = "PN"
