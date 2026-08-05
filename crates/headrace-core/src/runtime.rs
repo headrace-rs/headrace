@@ -232,7 +232,7 @@ async fn drain(work: &mut JoinSet<Result<()>>) -> Result<()> {
 }
 
 /// Completes on Ctrl-C or, on Unix, SIGTERM (Kubernetes sends SIGTERM on pod stop).
-async fn shutdown_signal() {
+pub(crate) async fn shutdown_signal() {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };

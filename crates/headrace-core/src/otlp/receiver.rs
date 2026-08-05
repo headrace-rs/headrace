@@ -45,7 +45,7 @@ pub async fn run(listen: String, tx: Box<dyn Producer>, nm: NodeMetrics) -> Resu
     tracing::info!(%addr, "OTLP receiver listening");
     tonic::transport::Server::builder()
         .add_service(MetricsServiceServer::new(service))
-        .serve(addr)
+        .serve_with_shutdown(addr, crate::runtime::shutdown_signal())
         .await
         .context("OTLP receiver")?;
     Ok(())
