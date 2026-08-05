@@ -1,3 +1,12 @@
+## 0.1.2 (2026-08-05)
+
+### Features
+
+- add otlp source and sink
+- grpc receiver and exporter in core
+- enable the otlp feature
+- graceful receiver shutdown
+
 ## 0.1.1 (2026-08-04)
 
 ### Features
