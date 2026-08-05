@@ -190,12 +190,12 @@ consumer (fan-out is a later `tee`). Full JSON Schema: `headrace schema`.
 |---|---|---|
 | source | `generator` | synthetic metrics (dev/test) |
 | source | `stdin` | one JSON `Record` per line |
-| source | `otlp` | *next* - OTLP/gRPC receiver |
+| source | `otlp` | OTLP/gRPC receiver (`otlp` feature) |
 | transform | `filter` | keep where `key` exists / equals |
 | transform | `window` | tumbling; `group_by` + `aggregate {count,sum,min,max,avg}`; `on_missing {skip,error}`. Sliding/session *next* |
 | transform | `map`, `join`, `wasm` | *next* |
 | sink | `stdout` | text / json |
-| sink | `otlp` | *next* - OTLP out / Prometheus remote-write |
+| sink | `otlp` | OTLP/gRPC exporter (`otlp` feature); Prometheus remote-write *next* |
 
 ```yaml
 sources:  [{ type: generator, id: gen, interval: 200ms }]
@@ -274,25 +274,22 @@ flowchart TD
   cli["headrace (bin)<br/>run / validate / schema"] --> core[headrace-core]
   cli --> ir[headrace-ir]
   core --> ir
-  core -.next.-> otlp[headrace-otlp]
   core -.next.-> nats[headrace-backend-nats]
 ```
 
 - `headrace-ir` - IR types + JSON Schema. No runtime deps.
-- `headrace-core` - record model, `Backend` trait + in-process impl, transforms, runtime, `Metrics` boundary.
+- `headrace-core` - record model, `Backend` trait + in-process impl, transforms, runtime, `Metrics` boundary, and the OTLP source/sink behind the optional `otlp` feature.
 - `headrace` - CLI + OTel metrics exporter (the only crate that depends on OpenTelemetry).
 
 ## Testing
 
 Unit and property tests live with the code (`#[cfg(test)]` and `tests/`); time-dependent behavior
-is driven by the paused tokio clock, never wall-clock sleeps. As OTLP lands, the whole path gets
-end-to-end coverage as a **cargo integration test** (`crates/headrace/tests/otlp_e2e.rs`), no
-external services, run by plain `cargo test`:
+is driven by the paused tokio clock, never wall-clock sleeps. The whole OTLP path has end-to-end
+coverage as a **cargo integration test** (`crates/headrace-core/tests/otlp_e2e.rs`), no external
+services, run by `cargo test --all-features`:
 
-1. Start Headrace's OTLP receiver on an ephemeral port, running a small pipeline
-   (`filter -> window` over a metric's value).
-2. Push OTLP metrics with an `opentelemetry-otlp` exporter - a known series, so the expected rollup
-   is deterministic.
+1. Stand up Headrace's OTLP receiver on an ephemeral port, feeding a `window` rollup.
+2. Push a known series over gRPC, so the expected rollup is deterministic.
 3. Headrace's OTLP sink exports to a mock OTLP receiver stood up inside the test (a tonic server
    that records requests).
 4. Assert the aggregated value, labels, and window bounds on what the mock received.
