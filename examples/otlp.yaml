@@ -1,0 +1,28 @@
+# Receive OTLP metrics on :4317, roll up average latency per service+route in 5s
+# windows, and export the rollups over OTLP to a downstream collector.
+#
+#   cargo run -p headrace -- run examples/otlp.yaml
+#
+# Point any OTLP/gRPC exporter at 127.0.0.1:4317; rollups are sent to `endpoint`.
+version: 0
+
+sources:
+  - type: otlp
+    id: in
+    listen: 0.0.0.0:4317
+
+transforms:
+  - type: window
+    id: rollup
+    input: in
+    size: 5s
+    group_by: [service.name, http.route]
+    aggregate:
+      op: avg
+      field: value
+
+sinks:
+  - type: otlp
+    id: out
+    input: rollup
+    endpoint: "http://127.0.0.1:4327" # your downstream OTLP/gRPC collector
