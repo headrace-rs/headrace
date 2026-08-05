@@ -29,3 +29,6 @@ otlp = ["dep:tonic", "dep:opentelemetry-proto"]
 serde_yaml.workspace = true
 proptest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+# Drive the OTLP e2e test (otlp_e2e.rs): a real gRPC client and mock collector.
+tonic.workspace = true
+opentelemetry-proto.workspace = true
