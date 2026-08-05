@@ -1,3 +1,9 @@
+## 0.1.4 (2026-08-05)
+
+### Features
+
+- helm chart for the otlp deployment
+
 ## 0.1.3 (2026-08-05)
 
 ### Features
