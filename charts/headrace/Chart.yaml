@@ -1,0 +1,16 @@
+apiVersion: v2
+name: headrace
+description: OTel-native stateful stream processing in a single binary.
+type: application
+# Chart version; bumped independently of the app.
+version: 0.1.0
+# The headrace release this chart deploys by default.
+appVersion: "0.1.3"
+home: https://github.com/headrace-rs/headrace
+sources:
+  - https://github.com/headrace-rs/headrace
+keywords:
+  - opentelemetry
+  - otlp
+  - stream-processing
+  - observability

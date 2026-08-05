@@ -1,0 +1,67 @@
+# Container image. Published to GHCR beside this chart.
+image:
+  repository: ghcr.io/headrace-rs/headrace
+  # Empty tag defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# The in-process backend keeps window state local to the pod, so a single replica owns
+# all of it. Scaling past one replica needs the partitioned NATS backend (v0.4); until
+# then more replicas would split state and produce wrong rollups.
+replicaCount: 1
+
+# The pipeline IR, mounted at /etc/headrace/pipeline.yaml and passed to `headrace run`.
+# The default is self-contained: receive OTLP, roll up a 60s average per service, and
+# print the rollups as JSON to stdout (visible in `kubectl logs`). Point the sink at
+# your collector to emit OTLP instead.
+pipeline:
+  sources:
+    - { type: otlp, id: in, listen: 0.0.0.0:4317 }
+  transforms:
+    - type: window
+      id: rollup
+      input: in
+      size: 60s
+      group_by: [service.name]
+      aggregate: { op: avg, field: value }
+  sinks:
+    - { type: stdout, id: out, input: rollup, format: json }
+
+# headrace runtime flags.
+log:
+  level: info
+  format: json
+metrics:
+  # off | stdout | otlp - headrace's own self-telemetry.
+  mode: "off"
+  # OTLP endpoint for metrics.mode=otlp (else OTEL_EXPORTER_OTLP_ENDPOINT / default).
+  otlpEndpoint: ""
+
+service:
+  type: ClusterIP
+  # OTLP/gRPC receiver port.
+  port: 4317
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

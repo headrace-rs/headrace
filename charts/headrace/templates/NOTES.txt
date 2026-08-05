@@ -1,0 +1,15 @@
+headrace is running as {{ include "headrace.fullname" . }}.
+
+Send OTLP/gRPC metrics to it in-cluster at:
+
+    {{ include "headrace.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+
+The default pipeline rolls up a 60s average per service and prints the rollups as JSON
+to stdout. Watch them:
+
+    kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -f
+
+To send rollups onward instead, point the sink at your collector by overriding the
+pipeline, e.g.:
+
+    --set-json 'pipeline.sinks=[{"type":"otlp","id":"out","input":"rollup","endpoint":"http://otel-collector:4317"}]'
