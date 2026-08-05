@@ -20,32 +20,40 @@ pub fn decode(req: ExportMetricsServiceRequest) -> Vec<Record> {
             .map(|r| attrs(&r.attributes))
             .unwrap_or_default();
         for sm in rm.scope_metrics {
-            let scope = sm.scope.map(|s| s.name);
-            for m in sm.metrics {
-                let points = match m.data {
-                    Some(metric::Data::Gauge(g)) => g.data_points,
-                    Some(metric::Data::Sum(s)) => s.data_points,
-                    _ => continue, // histograms and others are not handled yet
-                };
-                for p in points {
-                    let Some(value) = number_value(&p) else {
-                        continue;
-                    };
-                    out.push(Record {
-                        ts_nanos: p.time_unix_nano,
-                        start_ts_nanos: (p.start_time_unix_nano != 0)
-                            .then_some(p.start_time_unix_nano),
-                        resource: resource.clone(),
-                        scope: scope.clone(),
-                        name: m.name.clone(),
-                        value,
-                        attrs: attrs(&p.attributes),
-                    });
-                }
-            }
+            decode_scope(sm, &resource, &mut out);
         }
     }
     out
+}
+
+fn decode_scope(sm: ScopeMetrics, resource: &Attrs, out: &mut Vec<Record>) {
+    let scope = sm.scope.map(|s| s.name);
+    for m in sm.metrics {
+        decode_metric(m, resource, &scope, out);
+    }
+}
+
+fn decode_metric(m: Metric, resource: &Attrs, scope: &Option<String>, out: &mut Vec<Record>) {
+    let name = m.name;
+    let points = match m.data {
+        Some(metric::Data::Gauge(g)) => g.data_points,
+        Some(metric::Data::Sum(s)) => s.data_points,
+        _ => return, // histograms and others are not handled yet
+    };
+    for p in points {
+        let Some(value) = number_value(&p) else {
+            continue;
+        };
+        out.push(Record {
+            ts_nanos: p.time_unix_nano,
+            start_ts_nanos: (p.start_time_unix_nano != 0).then_some(p.start_time_unix_nano),
+            resource: resource.clone(),
+            scope: scope.clone(),
+            name: name.clone(),
+            value,
+            attrs: attrs(&p.attributes),
+        });
+    }
 }
 
 /// Encode records into an OTLP metrics request: one Gauge metric per record name.
