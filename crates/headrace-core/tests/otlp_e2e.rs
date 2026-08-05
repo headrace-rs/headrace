@@ -8,6 +8,7 @@
 use headrace_core::backend::{Backend, InProcess};
 use headrace_core::metrics::{NodeKind, NodeMetrics};
 use headrace_core::otlp::convert::{decode, encode};
+use headrace_core::otlp::normalize::Normalizer;
 use headrace_core::record::{AttrValue, Attrs, Record};
 use headrace_core::{NoopMetrics, SharedMetrics};
 use headrace_ir::{Sink, Source, Transform};
@@ -147,7 +148,7 @@ async fn otlp_round_trips_through_a_window_rollup() {
         .await
         .expect("collector received an export within 5s")
         .expect("collector channel stayed open");
-    let rollup = decode(got);
+    let rollup = decode(got, &mut Normalizer::default());
     assert_eq!(rollup.len(), 1, "one group yields one rollup record");
     assert_eq!(rollup[0].name, "http.server.duration");
     assert_eq!(rollup[0].value, 20.0, "avg of 10, 20, 30");

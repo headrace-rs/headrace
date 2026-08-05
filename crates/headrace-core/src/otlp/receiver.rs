@@ -8,13 +8,18 @@ use opentelemetry_proto::tonic::collector::metrics::v1::{
     metrics_service_server::{MetricsService, MetricsServiceServer},
 };
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tonic::{Request, Response, Status};
+
+use super::normalize::Normalizer;
 
 #[derive(Clone)]
 struct Service {
     tx: Arc<dyn Producer>,
     nm: NodeMetrics,
+    // Shared across the per-connection clones tonic makes, so cumulative-to-delta state
+    // is one series history for the whole receiver, not one per connection.
+    norm: Arc<Mutex<Normalizer>>,
 }
 
 #[tonic::async_trait]
@@ -23,7 +28,12 @@ impl MetricsService for Service {
         &self,
         request: Request<ExportMetricsServiceRequest>,
     ) -> Result<Response<ExportMetricsServiceResponse>, Status> {
-        for rec in super::convert::decode(request.into_inner()) {
+        // Decode (and normalize) under the lock; hold nothing across the sends below.
+        let records = {
+            let mut norm = self.norm.lock().expect("normalizer mutex poisoned");
+            super::convert::decode(request.into_inner(), &mut norm)
+        };
+        for rec in records {
             if self.tx.send(None, rec).await.is_err() {
                 return Err(Status::unavailable("pipeline closed"));
             }
@@ -41,6 +51,7 @@ pub async fn run(listen: String, tx: Box<dyn Producer>, nm: NodeMetrics) -> Resu
     let service = Service {
         tx: Arc::from(tx),
         nm,
+        norm: Arc::new(Mutex::new(Normalizer::default())),
     };
     tracing::info!(%addr, "OTLP receiver listening");
     tonic::transport::Server::builder()
