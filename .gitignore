@@ -1,4 +1,9 @@
 /target
 Cargo.lock.bak
 *.swp
+
+### macOS ###
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
