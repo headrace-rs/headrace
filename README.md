@@ -25,15 +25,18 @@ cargo run -p headrace -- --metrics otlp run examples/latency.yaml   # export hea
 
 ## Status
 
-v0.1 (current) runs the in-process pipeline: IR with static validation, `filter` and
-tumbling `window` transforms, `generator`/`stdin` sources, `stdout` sinks, and OTel
-self-metrics.
+v0.1 runs the in-process pipeline: IR with static validation, `filter` and tumbling
+`window` transforms, `generator`/`stdin` sources, `stdout` sinks, and OTel self-metrics.
+The OTLP source/sink (v0.2) has landed behind the `otlp` feature.
 
-Roadmap (details in [DESIGN.md](./DESIGN.md#roadmap)):
+Roadmap (details in [DESIGN.md](./DESIGN.md#roadmap)) - core processing first, on the
+in-process backend and deployable in a real cluster, before a distributed backend:
 
-- **v0.1**: in-process backend; `filter` + tumbling `window`; `stdout`/JSON sinks.
-- **v0.2**: OTLP in/out, WASM transform, NATS JetStream backend, Helm chart, MCP authoring
-  server, docs site.
-- **v0.3**: state checkpointing, event-time windows + watermarks, `map`/`join`, `Pipeline` CRD.
+- **v0.2 - deployable core**: OTLP in/out ✓, Helm chart + GHCR, event-time windows +
+  watermarks, sliding windows.
+- **v0.3 - richer transforms**: `map`, `join`, local state inspection.
+- **v0.4 - scale & extend**: NATS JetStream backend, WASM transform, docs site.
+- **v0.5+**: state checkpointing + interactive queries, MCP authoring server, `Pipeline`
+  CRD + operator, session windows.
 
 Apache-2.0.

@@ -35,7 +35,7 @@ Two representations, kept separate:
   optimization on this representation; users never handle it.
 - **IR** - the program that processes records: Headrace's own transform-DAG spec (`headrace-ir`),
   OTel-aware but not OTLP. It is a config language, in the spirit of a Vector topology or a Flink
-  job graph, and it is what an authoring agent targets in v0.2.
+  job graph, and it is what an authoring agent targets once the MCP server lands (v0.5).
 
 Stateless transforms (`filter`, `map`) hold nothing. State lives only in windowing transforms,
 keyed by `group_by`, which is what makes horizontal scaling work.
@@ -104,18 +104,18 @@ flowchart LR
 - One durable pull consumer per partition; a worker binds the partitions for its StatefulSet
   ordinal (static assignment: `partition % replicas == ordinal`).
 - Trade-off versus Kafka: scaling P is a rolling operation, not seamless elastic rebalance.
-  Acceptable for v0.2.
+  Acceptable for the first scaled cut (v0.4).
 
 **Why not consistent hashing yet.** A ketama-style ring would move fewer keys when the worker count
 changes, but the cost that actually hurts is moving a key's *window state*, not remapping the key.
-Until state checkpointing lands (v0.3), any reassignment drops and rebuilds in-flight windows
+Until state checkpointing lands (v0.5), any reassignment drops and rebuilds in-flight windows
 regardless of the hash, so the ring buys little. When we revisit assignment, the models to weigh
 are key-groups (Flink) or rendezvous hashing rather than a plain ring, because they bound state
-migration. Static assignment stays for v0.2 (ADR-0008).
+migration. Static assignment stays for the first scaled cut (v0.4) (ADR-0008).
 
-**State durability (v0.1 to v0.2): none.** On worker loss, in-flight windows are dropped and rebuilt
+**State durability (through v0.4): none.** On worker loss, in-flight windows are dropped and rebuilt
 from the next events (at-most-once for in-flight aggregates). Checkpointing window state to a
-compacted changelog or PVC is v0.3, at which point workers become a StatefulSet. Exactly-once is
+compacted changelog or PVC is v0.5, at which point workers become a StatefulSet. Exactly-once is
 out of scope.
 
 ## Stateful semantics
@@ -128,15 +128,15 @@ records, and therefore its state, always land on one worker.
 
 **Time is event time.** Windows are placed by the record's own `ts_nanos` (OTel `TimeUnixNano`),
 not wall clock. v0.1 triggers flushes on processing time (simple, but wrong under lag or replay).
-v0.3 moves to **watermarks**: `watermark = max_event_time - allowed_lateness`; a window
+v0.2 moves to **watermarks**: `watermark = max_event_time - allowed_lateness`; a window
 `[start, end)` emits when the watermark passes `end`; records later than that but within the
 lateness bound update the emitted window, and records beyond it drop or route to a side output.
 
-**Window kinds.** Tumbling today. Sliding (overlapping windows, so a record lands in several) and
-session (gap-based, windows merge while events keep arriving and close after an idle gap) come next,
-with per-window **lateness** and state **staleness** (a TTL that evicts idle keys so an unbounded
-keyspace does not grow without limit). These are event-time features and land with watermarks in
-v0.3 (ADR-0009).
+**Window kinds.** Tumbling today. **Sliding** (overlapping windows, so a record lands in several)
+lands with watermarks in v0.2; **session** (gap-based: windows merge while events keep arriving and
+close after an idle gap) comes later, in v0.7. Both carry per-window **lateness** and state
+**staleness** (a TTL that evicts idle keys so an unbounded keyspace does not grow without limit).
+These are event-time features (ADR-0009).
 
 **Metric temporality is a first-class ingest concern**, and it is what makes this telemetry rather
 than generic streams. OTel metrics are delta or cumulative; aggregation must normalize to delta on
@@ -160,7 +160,7 @@ co-located with the transform's partition, so a reference across transforms part
 different keys would force a per-record distributed lookup and break locality (ADR-0007). Combine
 state with one of two disciplined mechanisms instead:
 
-- **join** (roadmap): co-partition both inputs on the join key, so both sides' state lands on the
+- **join** (v0.3): co-partition both inputs on the join key, so both sides' state lands on the
   same worker and stays local. This is the Flink and Kafka-Streams model.
 - **broadcast state**: a small, read-mostly table (rules, config, reference data) replicated to
   every partition.
@@ -169,9 +169,9 @@ Large reference data belongs in an external lookup, outside the state model.
 
 **Inspecting state.** Because every aggregate is a monoid, partial state is meaningful to read. The
 plan is a local, read-only view of current accumulators per `(transform_id, group_key, window)`,
-via a `/state` admin endpoint and a `headrace inspect` command (v0.2). In the scaled deployment the
+via a `/state` admin endpoint and a `headrace inspect` command (v0.3). In the scaled deployment the
 compacted changelog is itself the queryable state: the current value of a key is a read over its
-changelog, the Kafka-Streams interactive-queries / materialized-view model (v0.3). A SQL grammar
+changelog, the Kafka-Streams interactive-queries / materialized-view model (v0.5). A SQL grammar
 over that state is a possible later step.
 
 **Persistence has two distinct roles**, both satisfiable by JetStream:
@@ -214,14 +214,14 @@ sinks:    [{ type: stdout, id: out, input: rollup, format: text }]
 
 Where a pipeline definition lives, and how you create or update one, without building a REST API.
 
-- **Now (v0.1 to v0.2):** the IR is a file (`headrace run f.yaml`) or a ConfigMap on Kubernetes.
-  GitOps (Argo/Flux) is the create/update path.
-- **v0.3:** a **`Pipeline` CRD whose `spec` is the IR verbatim**; `status` reports observed state
+- **Now (until the CRD, v0.6):** the IR is a file (`headrace run f.yaml`) or a ConfigMap on
+  Kubernetes. GitOps (Argo/Flux) is the create/update path.
+- **v0.6:** a **`Pipeline` CRD whose `spec` is the IR verbatim**; `status` reports observed state
   (running, per-node lag, assigned partitions, errors). A thin operator reconciles `Pipeline` CRs
   into Deployments and backend subjects. The CRD's OpenAPI v3 validation schema is generated from
   the IR JSON Schema (`headrace schema`), so `kubectl apply` validates for free and you inherit
   RBAC, GitOps, and admission webhooks.
-- **Authoring API:** the v0.2 MCP server is how an agent creates a dataflow: emit IR, validate
+- **Authoring API:** the v0.5 MCP server is how an agent creates a dataflow: emit IR, validate
   against the schema, dry-run, then write it as a file or CR. No custom REST surface.
 
 This control-plane operator (CR -> Deployment) is separate from the *no data-plane controller*
@@ -317,43 +317,85 @@ pushed with the Actions `GITHUB_TOKEN`. (The classic `helm/chart-releaser-action
 cluster, point an OTLP exporter at it, run an aggregation, and sink to a collector - the OTLP
 round-trip test above, but live.
 
+The v0.2 deployable unit is a single stateless-to-configure binary: no external backend, IR from a
+ConfigMap, OTLP in and OTLP out.
+
+```mermaid
+flowchart LR
+  exp["OTLP exporter(s)"] -->|"gRPC :4317"| svc["Service"]
+  subgraph k8s["Kubernetes"]
+    svc --> pod["headrace pod<br/>in-process backend"]
+    cm["ConfigMap<br/>pipeline IR"] -.mounted.-> pod
+  end
+  pod -->|OTLP out| col["downstream collector"]
+```
+
 ## Roadmap
+
+The bet is to prove core processing correctness on the in-process backend, deployable and testable
+in a real cluster, *before* taking on a distributed backend. Scale-out (NATS), extensibility
+(WASM), durability, and the control plane follow once the core is proven.
+
+```mermaid
+flowchart LR
+  v02["v0.2 · deployable core<br/>OTLP · Helm/GHCR<br/>event-time + watermarks<br/>sliding windows"]
+  v03["v0.3 · richer transforms<br/>map · join<br/>state inspection"]
+  v04["v0.4 · scale + extend<br/>NATS backend<br/>WASM · docs"]
+  v05["v0.5 · durable + authoring<br/>checkpointing<br/>interactive queries<br/>MCP server"]
+  v06["v0.6 · control plane<br/>Pipeline CRD + operator"]
+  v07["v0.7 · session windows"]
+  v02 --> v03 --> v04 --> v05 --> v06 --> v07
+```
 
 **v0.1 (done)** - IR with static validation (refs, cycles, durations), in-process backend,
 generator/stdin -> filter/window -> stdout, task supervision (fail fast on node error or panic),
 graceful drain on SIGINT/SIGTERM (a second signal forces), OTel self-metrics.
 
-**v0.2 - make it real and deployable**, in sequence:
+**v0.2 - deployable core processing** (in-process backend, no external dependency), in sequence:
 
-1. **OTLP source/sink** - ingest and emit real OTLP; decode to `Record` with delta/cumulative
-   normalization on ingest, encode back on egress. Nothing downstream is useful until this exists.
-2. **OTLP round-trip integration test** (see *Testing*) - locks the wire contract before we build on it.
-3. **Helm chart + GHCR** (see *Packaging and distribution*) - so it can run in a real cluster.
-4. **NATS JetStream backend** - the scaled path: partitioned subjects, durable consumers, static
-   assignment (ADR-0008).
-5. **WASM transform** - the escape hatch for custom logic.
-6. **MCP authoring server + local state view** - an agent authors IR against the schema;
-   `headrace inspect` / `/state` reads current accumulators.
-7. **Docs site** (Vocs or mdBook, mermaid) on Cloudflare Pages.
+1. **OTLP source/sink** *(done)* - ingest and emit real OTLP; decode to `Record` with
+   cumulative-to-delta normalization on ingest, encode back on egress.
+2. **OTLP round-trip integration test** *(done)* - locks the wire contract (see *Testing*).
+3. **Helm chart + GHCR** (see *Packaging and distribution*) - drop the single binary into a real
+   cluster, point an OTLP exporter at it, and sink rollups to a collector.
+4. **Event-time + watermarks** - place windows by the record's own time and close them on a
+   watermark (`max_event_time - allowed_lateness`), replacing processing-time flushes. The
+   foundation the rest of the windowing work builds on.
+5. **Sliding windows** - overlapping windows (a record lands in several), with per-window lateness
+   and state staleness (a TTL that evicts idle keys). Built on watermarks (ADR-0009).
 
 Branding and logo: done.
 
-**v0.3 - correctness and scale at rest**, in sequence.
+**v0.3 - richer transforms and introspection** (still in-process), in sequence:
 
-*Correctness (windowing):*
+1. **`map` + `join`** - a co-partitioned join plus an expression transform; unlocks cross-series
+   arithmetic like `a - b` (ADR-0010). Needs event-time windows for "the same window" to mean
+   something, so it follows v0.2.
+2. **Local state inspection** - a read-only view of current accumulators per
+   `(transform_id, group_key, window)`, via a `/state` admin endpoint and a `headrace inspect`
+   command. Meaningful because every aggregate is a monoid (see *Stateful semantics*).
 
-1. **Event-time + watermarks** - place windows by the record's own time and close them on a
-   watermark (`max_event_time - allowed_lateness`). The foundation the rest of this list builds on.
-2. **Sliding and session windows** - overlapping and gap-based windows, with per-window lateness
-   and state staleness (a TTL that evicts idle keys). Built on watermarks (ADR-0009).
-3. **`map` + `join`** - a co-partitioned join plus an expression transform; unlocks cross-series
-   arithmetic like `a - b` (ADR-0010). Needs event-time windows for "the same window" to mean something.
+**v0.4 - scale-out and extensibility**, in sequence:
 
-*Scale at rest (durability and ops):*
+1. **NATS JetStream backend** - the scaled path: partitioned subjects, durable consumers, static
+   assignment (ADR-0008). The first deployment that needs an external backend.
+2. **WASM transform** - the escape hatch for custom logic.
+3. **Docs site** (Vocs or mdBook, mermaid) on Cloudflare Pages.
 
-4. **State checkpointing** - mutations to a compacted changelog, replayed on rebalance, with RocksDB
-   spill when state outgrows RAM. Workers become a StatefulSet; at-most-once becomes durable.
-5. **Interactive state queries** - cluster-wide reads over the changelog (the Kafka-Streams
-   materialized-view model). Depends on the changelog from step 4.
-6. **`Pipeline` CRD + operator** - `spec` is the IR, `status` reports observed state; a thin
-   operator reconciles CRs into Deployments and backend subjects. The lifecycle layer, last.
+**v0.5 - durability and authoring:**
+
+1. **State checkpointing** - mutations to a compacted changelog, replayed on rebalance, with
+   RocksDB spill when state outgrows RAM. Workers become a StatefulSet; at-most-once becomes
+   durable. Depends on the v0.4 backend.
+2. **Interactive state queries** - cluster-wide reads over the changelog (the Kafka-Streams
+   materialized-view model). Depends on the changelog from the previous step.
+3. **MCP authoring server** - an agent emits IR, validates against the schema, dry-runs, then
+   writes it as a file or CR. No custom REST surface.
+
+**v0.6 - control plane:**
+
+- **`Pipeline` CRD + operator** - `spec` is the IR verbatim, `status` reports observed state; a thin
+  operator reconciles CRs into Deployments and backend subjects. The lifecycle layer.
+
+**v0.7 - session windows** - gap-based windows that merge while events keep arriving and close after
+an idle gap. Event-time (watermark-driven), so it builds on the v0.2 foundation.
