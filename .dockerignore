@@ -1,0 +1,9 @@
+# Keep the build context small: only the workspace sources and lockfile are needed.
+target/
+.git/
+.github/
+brand/
+docs/
+charts/
+docker/
+examples/
