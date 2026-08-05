@@ -146,3 +146,27 @@ impl NodeRecorder for OtelNodeRecorder {
         self.node_errors.add(1, &self.attrs);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn off_mode_produces_no_telemetry() {
+        assert!(init(Mode::Off, None).unwrap().is_none());
+    }
+
+    #[test]
+    fn stdout_mode_records_through_every_instrument() {
+        // Builds a real provider (stdout exporter, no network) and drives every recorder
+        // path: per-node binding, all four counters/histogram, then a clean shutdown.
+        let telemetry = init(Mode::Stdout, None).unwrap().expect("stdout telemetry");
+        let rollup = telemetry.metrics.node("rollup", NodeKind::Window);
+        rollup.record_out();
+        rollup.record_dropped(2);
+        rollup.window_flushed(3);
+        rollup.node_error();
+        telemetry.metrics.node("gen", NodeKind::Source).record_out();
+        telemetry.shutdown();
+    }
+}
