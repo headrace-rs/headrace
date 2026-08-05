@@ -32,7 +32,8 @@ cargo test --workspace --all-features
 
 ## Commits
 
-- Conventional Commits (see CONTRIBUTING.md).
+- Conventional Commits (see CONTRIBUTING.md). Write the subject in the present tense, imperative
+  voice: `feat: add sliding windows`, not `added` or `adds`.
 - Disclose AI with an `Assisted-by: Claude:claude-opus-4-8` trailer. Never `Co-Authored-By`, and
   never add a human's `Signed-off-by`.
 

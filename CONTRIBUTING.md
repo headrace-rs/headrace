@@ -14,8 +14,10 @@ Thanks for contributing to Headrace. These guidelines keep history clean and rev
 
 ## Commit messages
 
-A Conventional Commits subject, then an imperative body that explains *why* when it is not
-obvious, wrapped at ~72 columns, ASCII only (no em-dash, no `--`).
+A Conventional Commits subject in the present tense, imperative voice (`feat: add sliding
+windows`, not `feat: added sliding windows` or `feat: adds sliding windows`), then an imperative
+body that explains *why* when it is not obvious, wrapped at ~72 columns, ASCII only (no em-dash,
+no `--`).
 
 AI-assisted commits disclose the assistant with an `Assisted-by:` trailer, following the kernel
 [coding-assistants guidance](https://docs.kernel.org/process/coding-assistants.html). Do not use
