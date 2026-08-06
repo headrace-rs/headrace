@@ -34,6 +34,9 @@ cargo test --workspace --all-features
 
 - Conventional Commits (see CONTRIBUTING.md). Write the subject in the present tense, imperative
   voice: `feat: add sliding windows`, not `added` or `adds`.
+- Keep the body minimal, or omit it. A good subject plus the diff is usually enough; add a body
+  only for what the code cannot show (why, a trade-off, a non-obvious consequence). Never restate
+  the change or narrate the diff.
 - Disclose AI with an `Assisted-by: Claude:claude-opus-4-8` trailer. Never `Co-Authored-By`, and
   never add a human's `Signed-off-by`.
 
