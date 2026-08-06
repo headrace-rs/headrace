@@ -1,3 +1,11 @@
+## 0.1.5 (2026-08-06)
+
+### Features
+
+- window lateness and idle-timeout fields
+- event-time windows with watermarks
+- idle_timeout flushes quiet windows
+
 ## 0.1.4 (2026-08-05)
 
 ### Features
