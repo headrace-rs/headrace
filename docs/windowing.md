@@ -89,5 +89,6 @@ transforms:
     aggregate:
       op: avg              # count | sum | min | max | avg
       field: value         # numeric attribute to reduce (default: the record's value)
-      on_missing: skip     # skip | error, when `field` is absent or non-numeric
+      on_missing: skip     # skip | error, when `field` is absent
+      on_invalid: error    # skip | error, when `field` is present but non-numeric
 ```

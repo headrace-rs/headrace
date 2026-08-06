@@ -9,7 +9,8 @@ transforms:
     id: error_rate
     input: joined
     value: "errors / total"   # the expression, assigned to `value`
-    on_missing: skip          # skip | error (default skip)
+    on_missing: skip          # absent field:              skip | error (default skip)
+    on_invalid: error         # non-numeric or non-finite: skip | error (default skip)
 ```
 
 Typical uses: derive a rate (`errors / total`), rescale a unit (`value / 1000` for ns to us,
@@ -41,14 +42,16 @@ are planned later; arbitrary per-record logic is what the `wasm` transform (road
 
 ## Missing fields and undefined results
 
-`on_missing` decides what happens when the expression can't produce a usable number:
+Two independent policies decide what happens when the expression can't produce a usable number.
+Each is `skip` (drop the record, count it on `headrace.records.dropped`) or `error` (fail the
+pipeline), both defaulting to `skip`:
 
-- **`skip`** (default) - drop the record and count it on `headrace.records.dropped`.
-- **`error`** - fail the pipeline.
+- **`on_missing`** - a referenced field is **absent**.
+- **`on_invalid`** - a referenced field is **present but non-numeric**, or the result is
+  **non-finite** (e.g. divide by zero).
 
-This currently covers three cases together: a referenced field is **absent**, a referenced field
-is **present but non-numeric**, and the result is **non-finite** (e.g. divide by zero). Splitting
-these into separate policies is under discussion.
+Splitting them lets you tolerate sparse data (`on_missing: skip`) while still failing loud on a
+wrong or non-numeric field (`on_invalid: error`).
 
 ## Examples
 
