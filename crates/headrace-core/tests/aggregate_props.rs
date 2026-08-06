@@ -63,7 +63,10 @@ fn rec(v: f64) -> Record {
 
 /// Single-group aggregate over `vs`. `None` when `vs` is empty (no group forms).
 fn agg_over(op: AggregateOp, vs: &[f64]) -> Option<f64> {
+    // All samples share ts 1, so they land in one window; drain it in full.
     let mut w = Window::new(
+        1000,
+        0,
         vec![],
         Aggregate {
             op,
@@ -74,7 +77,7 @@ fn agg_over(op: AggregateOp, vs: &[f64]) -> Option<f64> {
     for &v in vs {
         w.on_record(&rec(v)).unwrap();
     }
-    w.flush(0, 1).into_iter().next().map(|r| r.value)
+    w.drain_all().into_iter().next().map(|r| r.value)
 }
 
 /// The monoid combine for a distributive op - how two partitions' partials become the whole.

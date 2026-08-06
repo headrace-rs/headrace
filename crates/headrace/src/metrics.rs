@@ -71,6 +71,7 @@ pub fn init(mode: Mode, endpoint: Option<String>) -> Result<Option<Telemetry>> {
 struct OtelMetrics {
     records_out: Counter<u64>,
     records_dropped: Counter<u64>,
+    records_late: Counter<u64>,
     window_flushes: Counter<u64>,
     window_groups: Histogram<u64>,
     node_errors: Counter<u64>,
@@ -86,6 +87,10 @@ impl OtelMetrics {
             records_dropped: meter
                 .u64_counter("headrace.records.dropped")
                 .with_description("Records dropped (filtered, or missing aggregate field)")
+                .build(),
+            records_late: meter
+                .u64_counter("headrace.records.late")
+                .with_description("Records dropped as too late (their window had fired)")
                 .build(),
             window_flushes: meter
                 .u64_counter("headrace.window.flushes")
@@ -112,6 +117,7 @@ impl Metrics for OtelMetrics {
             ],
             records_out: self.records_out.clone(),
             records_dropped: self.records_dropped.clone(),
+            records_late: self.records_late.clone(),
             window_flushes: self.window_flushes.clone(),
             window_groups: self.window_groups.clone(),
             node_errors: self.node_errors.clone(),
@@ -125,6 +131,7 @@ struct OtelNodeRecorder {
     attrs: [KeyValue; 2], // [node, kind]
     records_out: Counter<u64>,
     records_dropped: Counter<u64>,
+    records_late: Counter<u64>,
     window_flushes: Counter<u64>,
     window_groups: Histogram<u64>,
     node_errors: Counter<u64>,
@@ -136,6 +143,9 @@ impl NodeRecorder for OtelNodeRecorder {
     }
     fn record_dropped(&self, n: u64) {
         self.records_dropped.add(n, &self.attrs);
+    }
+    fn record_late(&self, n: u64) {
+        self.records_late.add(n, &self.attrs);
     }
     fn window_flushed(&self, groups: u64) {
         let node_only = &self.attrs[..1]; // just the node label
@@ -164,6 +174,7 @@ mod tests {
         let rollup = telemetry.metrics.node("rollup", NodeKind::Window);
         rollup.record_out();
         rollup.record_dropped(2);
+        rollup.record_late(1);
         rollup.window_flushed(3);
         rollup.node_error();
         telemetry.metrics.node("gen", NodeKind::Source).record_out();

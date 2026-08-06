@@ -429,6 +429,7 @@ mod tests {
     impl NodeRecorder for ErrRecorder {
         fn record_out(&self) {}
         fn record_dropped(&self, _: u64) {}
+        fn record_late(&self, _: u64) {}
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {
             self.errors.fetch_add(1, Ordering::Relaxed);

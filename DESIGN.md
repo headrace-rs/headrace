@@ -249,9 +249,10 @@ model is already OTel-compatible.
 Headrace records its own metrics through a `Metrics` boundary (`headrace-core::metrics`), a no-op by
 default so the core carries no OpenTelemetry dependency. The `headrace` binary supplies an
 OTel-backed recorder (`--metrics stdout|otlp`, off by default) that exports `headrace.records.out`,
-`headrace.records.dropped`, `headrace.window.flushes` / `.groups`, and `headrace.node.errors`,
-attributed by node id and kind. The instruments are the one piece of state shared across node
-tasks, handed out as cheap `Arc` clones. Headrace emits over OTLP, the same protocol it ingests.
+`headrace.records.dropped`, `headrace.records.late`, `headrace.window.flushes` / `.groups`, and
+`headrace.node.errors`, attributed by node id and kind. The instruments are the one piece of state
+shared across node tasks, handed out as cheap `Arc` clones. Headrace emits over OTLP, the same
+protocol it ingests.
 
 ## Prior art
 

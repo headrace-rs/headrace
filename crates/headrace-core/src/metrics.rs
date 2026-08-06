@@ -43,6 +43,9 @@ pub trait NodeRecorder: Send + Sync {
     fn record_out(&self);
     /// `n` records were dropped (filtered out, or `on_missing = skip`).
     fn record_dropped(&self, n: u64);
+    /// `n` records were dropped as too late - their window had already fired. A nonzero
+    /// rate here means `allowed_lateness` is too small for the source's out-of-orderness.
+    fn record_late(&self, n: u64);
     /// A window flushed, emitting `groups` aggregates.
     fn window_flushed(&self, groups: u64);
     /// The node's task terminated with an error.
@@ -63,6 +66,7 @@ struct NoopRecorder;
 impl NodeRecorder for NoopRecorder {
     fn record_out(&self) {}
     fn record_dropped(&self, _: u64) {}
+    fn record_late(&self, _: u64) {}
     fn window_flushed(&self, _: u64) {}
     fn node_error(&self) {}
 }
@@ -86,6 +90,10 @@ impl NodeMetrics {
 
     pub fn dropped(&self, n: u64) {
         self.0.record_dropped(n);
+    }
+
+    pub fn late(&self, n: u64) {
+        self.0.record_late(n);
     }
 
     pub fn window_flushed(&self, groups: u64) {

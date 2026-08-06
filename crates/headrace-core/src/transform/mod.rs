@@ -25,10 +25,11 @@ pub async fn run(
         Transform::Filter { key, equals, .. } => filter::run(key, equals, rx, tx, nm).await,
         Transform::Window {
             size,
+            allowed_lateness,
             group_by,
             aggregate,
             ..
-        } => window::run(size, group_by, aggregate, rx, tx, nm).await,
+        } => window::run(size, allowed_lateness, group_by, aggregate, rx, tx, nm).await,
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
     }

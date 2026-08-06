@@ -60,12 +60,17 @@ async fn connect_ready(endpoint: &str) -> MetricsServiceClient<Channel> {
     panic!("OTLP server at {endpoint} never became ready");
 }
 
+/// A realistic event time (nanos since the epoch, ~2023). Kept away from 0 so the
+/// window's start survives the OTLP round trip, where `start_time_unix_nano == 0` means
+/// "unset". All points share it, so they land in one event-time window.
+const TS_NANOS: u64 = 1_700_000_000_000_000_000;
+
 /// One gauge point for `service` with the given value.
 fn point(service: &str, value: f64) -> Record {
     let mut attrs = Attrs::new();
     attrs.insert("service.name".into(), AttrValue::Str(service.into()));
     Record {
-        ts_nanos: 1,
+        ts_nanos: TS_NANOS,
         start_ts_nanos: None,
         resource: Attrs::new(),
         scope: None,

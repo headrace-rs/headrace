@@ -1,6 +1,7 @@
-//! The window transform flushes on a timer, driven by *virtual* time so the test is
-//! deterministic - no wall-clock sleeps. Exercises the async driver + in-process backend
-//! together, which the pure-`Window` unit tests don't cover.
+//! The window transform fires in *event time*: a window closes when a later record pushes
+//! the watermark past its end, not on a wall clock. This exercises the async driver + the
+//! in-process backend together, which the pure-`Window` unit tests don't cover. Event time
+//! is driven entirely by the records, so no clock manipulation is needed.
 
 use headrace_core::backend::{Backend, InProcess};
 use headrace_core::metrics::{NodeKind, NodeMetrics};
@@ -10,8 +11,8 @@ use headrace_ir::Transform;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[tokio::test(start_paused = true)]
-async fn window_flushes_on_the_timer() {
+#[tokio::test]
+async fn window_fires_on_the_event_time_watermark() {
     let mut be = InProcess::new(64);
     let feed = be.producer("in"); // we push inputs here
     let win_rx = be.consumer("in"); // window reads them
@@ -28,35 +29,38 @@ async fn window_flushes_on_the_timer() {
             .unwrap();
     let task = tokio::spawn(headrace_core::transform::run(op, win_rx, win_tx, nm));
 
+    let five_s = Duration::from_secs(5).as_nanos() as u64;
+    // Three records land in the first window [0, 5s).
     for _ in 0..3 {
-        feed.send(None, rec(1.0)).await.unwrap();
+        feed.send(None, rec_at(1_000_000_000)).await.unwrap(); // ts = 1s
     }
-    // With the clock paused, the runtime auto-advances to the next timer once nothing else can
-    // progress: the three records fold first (recv is ready, the tick is not), then time jumps
-    // to the 5s boundary and the window flushes. No sleeps, no manual advance.
+    // A record at t = 5s advances the watermark to 5s, closing [0, 5s).
+    feed.send(None, rec_at(five_s)).await.unwrap();
+
     let flushed = out
         .recv()
         .await
-        .expect("window emits one aggregate on the timer");
-    assert_eq!(flushed.value, 3.0, "count of the three folded records");
+        .expect("window emits one aggregate when the watermark passes its end");
+    assert_eq!(flushed.value, 3.0, "count of the three records in [0, 5s)");
     let start = flushed.start_ts_nanos.expect("window start set");
+    assert_eq!(start, 0);
     assert_eq!(
         flushed.ts_nanos - start,
-        Duration::from_secs(5).as_nanos() as u64,
-        "window [start,end) spans `size`"
+        five_s,
+        "window [start, end) spans `size`"
     );
 
     task.abort();
 }
 
-fn rec(v: f64) -> Record {
+fn rec_at(ts_nanos: u64) -> Record {
     Record {
-        ts_nanos: 1,
+        ts_nanos,
         start_ts_nanos: None,
         resource: Attrs::new(),
         scope: None,
         name: "m".into(),
-        value: v,
+        value: 1.0,
         attrs: Attrs::new(),
     }
 }

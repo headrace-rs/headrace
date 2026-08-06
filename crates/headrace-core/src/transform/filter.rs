@@ -158,6 +158,7 @@ mod backend_tests {
         fn record_dropped(&self, n: u64) {
             self.dropped.fetch_add(n, Ordering::Relaxed);
         }
+        fn record_late(&self, _: u64) {}
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {}
     }
