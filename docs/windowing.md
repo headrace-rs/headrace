@@ -22,41 +22,34 @@ trails the newest event seen by `allowed_lateness`, so a larger grace fires late
 Fixed-size, non-overlapping, aligned to the epoch; every record lands in exactly one
 window. With `size: 5s`:
 
-```mermaid
-gantt
-  title Tumbling windows (size 5s)
-  dateFormat X
-  axisFormat %Ss
-  todayMarker off
-  section rollup
-  [0,5)   :0, 5s
-  [5,10)  :5, 5s
-  [10,15) :10, 5s
+```
+event time (seconds) ->
+   0         5         10        15
+   |---------|---------|---------|
+   |  [0,5)  | [5,10)  | [10,15) |
+      a b c     d   e       f
+   emits:  avg(a,b,c)  avg(d,e)  avg(f)
 ```
 
-A record at `t=2` reduces into `[0,5)`, one at `t=7` into `[5,10)`, and so on. A record at
-`t=5` opens `[5,10)` and advances `max_event_time` to 5; the watermark then reaches the end
-of `[0,5)`, which fires `avg` over the records it collected.
+A record at `t=5` opens `[5,10)` and advances `max_event_time` to 5; the watermark then
+reaches the end of `[0,5)`, which fires.
 
 ## Sliding windows (planned)
 
 Overlapping windows of `size`, advanced by a smaller `slide`, so one record can land in
 several. With `size: 10s`, `slide: 5s`:
 
-```mermaid
-gantt
-  title Sliding windows (size 10s, slide 5s)
-  dateFormat X
-  axisFormat %Ss
-  todayMarker off
-  section rollup
-  [0,10)  :0, 10s
-  [5,15)  :5, 10s
-  [10,20) :10, 10s
+```
+event time (seconds) ->
+   0         5         10        15        20
+   |---------|---------|---------|---------|
+   [------ [0,10) -----)
+             [------ [5,15) -----)
+                       [----- [10,20) -----)
 ```
 
-Where the bars overlap, a record falls in every window it spans - one at `t=7` reduces into
-both `[0,10)` and `[5,15)`. Not yet implemented - see the [roadmap](../DESIGN.md#roadmap).
+A record at `t=7` contributes to both `[0,10)` and `[5,15)`. Not yet implemented - see the
+[roadmap](../DESIGN.md#roadmap).
 
 ## allowed_lateness
 
