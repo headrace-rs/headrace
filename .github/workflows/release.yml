@@ -3,15 +3,6 @@ name: Release
 on:
   push:
     branches: [main]
-  # Manual backfill: build and push the image and chart for a version that was already
-  # released (tag + GitHub release exist) but never got its artifacts published, without
-  # asking knope to cut a new release.
-  workflow_dispatch:
-    inputs:
-      publish_version:
-        description: "Already-released version to publish artifacts for, e.g. 0.1.5 (no leading v)."
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -32,20 +23,17 @@ jobs:
     permissions:
       contents: write
     outputs:
-      # On push, the version comes from knope's bump; on workflow_dispatch, from the input.
-      released: ${{ steps.release.outputs.released || steps.manual.outputs.released }}
-      version: ${{ steps.release.outputs.version || steps.manual.outputs.version }}
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           # Full history and tags so knope can read the commits since the last release.
           fetch-depth: 0
       - uses: knope-dev/action@v2.1.2
-        if: github.event_name == 'push'
         with:
           version: 0.23.0
       - name: Configure the release identity
-        if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -57,7 +45,6 @@ jobs:
       # no-op, not a failure.
       - name: Release
         id: release
-        if: github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -80,23 +67,10 @@ jobs:
           else
             exit "$code"
           fi
-      - name: Select the version for a manual backfill
-        id: manual
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          version="${{ inputs.publish_version }}"
-          if ! git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
-            echo "::error::No tag v${version} exists; refusing to publish an unreleased version."
-            exit 1
-          fi
-          echo "released=true" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "::notice::Backfilling artifacts for v${version}."
 
-  # Build and push the versioned image and chart to GHCR at the released version's tag,
-  # either in the same run that cut the release (push) or for a manual backfill
-  # (dispatch). The published GHCR packages start private; make them public once to allow
-  # anonymous `helm pull` / `docker pull`.
+  # Build and push the versioned image and chart to GHCR, in the same run that cut the
+  # release, at the tag knope just created. The published GHCR packages start private;
+  # make them public once to allow anonymous `helm pull` / `docker pull`.
   publish:
     name: Publish image and chart
     needs: release
