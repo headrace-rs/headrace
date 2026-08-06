@@ -357,13 +357,12 @@ graceful drain on SIGINT/SIGTERM (a second signal forces), OTel self-metrics.
 1. **OTLP source/sink** *(done)* - ingest and emit real OTLP; decode to `Record` with
    cumulative-to-delta normalization on ingest, encode back on egress.
 2. **OTLP round-trip integration test** *(done)* - locks the wire contract (see *Testing*).
-3. **Helm chart + GHCR** (see *Packaging and distribution*) - drop the single binary into a real
-   cluster, point an OTLP exporter at it, and sink rollups to a collector.
-4. **Event-time + watermarks** - place windows by the record's own time and close them on a
-   watermark (`max_event_time - allowed_lateness`), replacing processing-time flushes. The
-   foundation the rest of the windowing work builds on.
-5. **Sliding windows** - overlapping windows (a record lands in several), with per-window lateness
-   and state staleness (a TTL that evicts idle keys). Built on watermarks (ADR-0009).
+3. **Helm chart + GHCR** *(done)* (see *Packaging and distribution*) - drop the single binary
+   into a real cluster, point an OTLP exporter at it, and sink rollups to a collector.
+4. **Event-time + watermarks** *(done)* - place windows by the record's own time and close them
+   on a watermark (`max_event_time - allowed_lateness`), replacing processing-time flushes.
+5. **Sliding windows** *(done)* - overlapping windows (a record lands in several). Per-key state
+   staleness (a TTL that evicts idle keys) is a follow-up (ADR-0009).
 
 Branding and logo: done.
 

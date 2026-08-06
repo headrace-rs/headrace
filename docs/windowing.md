@@ -34,7 +34,7 @@ event time (seconds) ->
 A record at `t=5` opens `[5,10)` and advances `max_event_time` to 5; the watermark then
 reaches the end of `[0,5)`, which fires.
 
-## Sliding windows (planned)
+## Sliding windows
 
 Overlapping windows of `size`, advanced by a smaller `slide`, so one record can land in
 several. With `size: 10s`, `slide: 5s`:
@@ -48,8 +48,7 @@ event time (seconds) ->
                        [----- [10,20) -----)
 ```
 
-A record at `t=7` contributes to both `[0,10)` and `[5,15)`. Not yet implemented - see the
-[roadmap](../DESIGN.md#roadmap).
+A record at `t=7` contributes to both `[0,10)` and `[5,15)`.
 
 ## allowed_lateness
 
