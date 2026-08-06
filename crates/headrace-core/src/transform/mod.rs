@@ -26,10 +26,20 @@ pub async fn run(
         Transform::Window {
             size,
             allowed_lateness,
+            idle_timeout,
             group_by,
             aggregate,
             ..
-        } => window::run(size, allowed_lateness, group_by, aggregate, rx, tx, nm).await,
+        } => {
+            let spec = window::Spec {
+                size,
+                allowed_lateness,
+                idle_timeout,
+                group_by,
+                aggregate,
+            };
+            window::run(spec, rx, tx, nm).await
+        }
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
     }

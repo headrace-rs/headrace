@@ -10,6 +10,7 @@ use crate::record::{AttrValue, Attrs, Record};
 use anyhow::{Result, bail};
 use headrace_ir::{Aggregate, AggregateOp, OnMissing};
 use std::collections::{BTreeMap, HashMap};
+use std::time::Duration;
 
 /// A key part per `group_by` dimension, in the transform's declared order.
 ///
@@ -249,36 +250,76 @@ fn value_of(rec: &Record, agg: &Aggregate) -> Option<f64> {
     }
 }
 
+/// The window transform's settings, parsed from the IR node.
+pub(super) struct Spec {
+    pub size: String,
+    pub allowed_lateness: Option<String>,
+    pub idle_timeout: Option<String>,
+    pub group_by: Vec<String>,
+    pub aggregate: Aggregate,
+}
+
 /// Drive the window in event time: fold records, firing each window when the watermark
-/// (`max_event_time - allowed_lateness`) reaches its end. Windows still open when the
-/// upstream closes are flushed best-effort.
+/// (`max_event_time - allowed_lateness`) reaches its end. With `idle_timeout` set, a spell
+/// of that long with no records collapses all open windows, so a stream that goes quiet
+/// still emits. Windows still open when the upstream closes are flushed best-effort.
 pub(super) async fn run(
-    size: String,
-    allowed_lateness: Option<String>,
-    group_by: Vec<String>,
-    aggregate: Aggregate,
+    spec: Spec,
     mut rx: Box<dyn Consumer>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
 ) -> Result<()> {
+    let Spec {
+        size,
+        allowed_lateness,
+        idle_timeout,
+        group_by,
+        aggregate,
+    } = spec;
     let size_nanos = humantime::parse_duration(&size)?.as_nanos() as u64;
     let lateness_nanos = match &allowed_lateness {
         Some(l) => humantime::parse_duration(l)?.as_nanos() as u64,
         None => 0,
     };
+    let idle = match &idle_timeout {
+        Some(t) => Some(humantime::parse_duration(t)?),
+        None => None,
+    };
     let mut win = Window::new(size_nanos, lateness_nanos, group_by, aggregate);
 
-    while let Some(rec) = rx.recv().await {
-        win.on_record(&rec)?;
-        meter_drops(&mut win, &nm);
-        if !emit(win.drain_ready(), tx.as_ref(), &nm).await {
-            return Ok(());
+    loop {
+        tokio::select! {
+            maybe = rx.recv() => match maybe {
+                Some(rec) => {
+                    win.on_record(&rec)?;
+                    meter_drops(&mut win, &nm);
+                    if !emit(win.drain_ready(), tx.as_ref(), &nm).await {
+                        return Ok(());
+                    }
+                }
+                None => break,
+            },
+            // Fires only when `idle` is set; otherwise this branch never completes.
+            _ = maybe_sleep(idle) => {
+                if !emit(win.drain_all(), tx.as_ref(), &nm).await {
+                    return Ok(());
+                }
+            }
         }
     }
     // Upstream closed cleanly: flush whatever is still open.
     meter_drops(&mut win, &nm);
     emit(win.drain_all(), tx.as_ref(), &nm).await;
     Ok(())
+}
+
+/// Sleep for `d`, or - when no idle timeout is configured - never complete, so the
+/// select's idle branch stays dormant and windowing is purely event-time.
+async fn maybe_sleep(d: Option<Duration>) {
+    match d {
+        Some(d) => tokio::time::sleep(d).await,
+        None => std::future::pending().await,
+    }
 }
 
 /// Meter and log records dropped since the last call: skipped for a missing field, or
