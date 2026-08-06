@@ -32,8 +32,21 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
         }
     }
     for o in &p.transforms {
-        if let Transform::Window { id, size, .. } = o {
+        if let Transform::Window {
+            id,
+            size,
+            allowed_lateness,
+            idle_timeout,
+            ..
+        } = o
+        {
             parse_duration(id, size)?;
+            if let Some(lateness) = allowed_lateness {
+                parse_duration(id, lateness)?;
+            }
+            if let Some(timeout) = idle_timeout {
+                parse_duration(id, timeout)?;
+            }
         }
     }
 
@@ -317,6 +330,23 @@ mod tests {
             r#"
             sources: [{ type: generator, id: gen, interval: 1s }]
             transforms: [{ type: window, id: w, input: gen, size: "5 furlongs", aggregate: { op: count } }]
+            sinks: [{ type: stdout, id: out, input: w }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&p),
+            Err(ValidationError::BadDuration { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_bad_allowed_lateness_duration() {
+        let p = pipeline(
+            r#"
+            sources: [{ type: generator, id: gen, interval: 1s }]
+            transforms:
+              - { type: window, id: w, input: gen, size: 5s,
+                  allowed_lateness: "3 fortnights", aggregate: { op: count } }
             sinks: [{ type: stdout, id: out, input: w }]
         "#,
         );

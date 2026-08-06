@@ -59,6 +59,16 @@ pub enum Transform {
         #[serde(default)]
         kind: WindowKind,
         size: String,
+        /// Grace period, in event time, to keep waiting for late records past a
+        /// window's end before firing it. Defaults to none (fire as soon as the
+        /// watermark reaches the window end).
+        #[serde(default)]
+        allowed_lateness: Option<String>,
+        /// Force-close open windows after this much wall-clock time with no records
+        /// arriving. Defaults to off, so windows close only on the event-time
+        /// watermark - set this for streams that go quiet but must still emit.
+        #[serde(default)]
+        idle_timeout: Option<String>,
         #[serde(default)]
         group_by: Vec<String>,
         aggregate: Aggregate,

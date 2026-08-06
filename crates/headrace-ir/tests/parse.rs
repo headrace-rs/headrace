@@ -70,6 +70,41 @@ fn parses_otlp_source_and_sink() {
 }
 
 #[test]
+fn window_lateness_and_idle_timeout_parse_and_default() {
+    let p: Pipeline = serde_yaml::from_str(
+        r#"
+        sources: [{ type: generator, id: g }]
+        transforms:
+          - { type: window, id: w, input: g, size: 5s, allowed_lateness: 2s, idle_timeout: 30s, aggregate: { op: count } }
+          - { type: window, id: w2, input: w, size: 5s, aggregate: { op: count } }
+        sinks: [{ type: stdout, id: o, input: w2 }]
+        "#,
+    )
+    .unwrap();
+    let Transform::Window {
+        allowed_lateness,
+        idle_timeout,
+        ..
+    } = &p.transforms[0]
+    else {
+        panic!("expected window");
+    };
+    assert_eq!(allowed_lateness.as_deref(), Some("2s"));
+    assert_eq!(idle_timeout.as_deref(), Some("30s"));
+    // Omitting both leaves them unset.
+    let Transform::Window {
+        allowed_lateness,
+        idle_timeout,
+        ..
+    } = &p.transforms[1]
+    else {
+        panic!("expected window");
+    };
+    assert_eq!(*allowed_lateness, None);
+    assert_eq!(*idle_timeout, None);
+}
+
+#[test]
 fn pipeline_roundtrips_through_json() {
     let p: Pipeline = serde_yaml::from_str(EXAMPLE).unwrap();
     let json = serde_json::to_string(&p).unwrap();
@@ -86,6 +121,7 @@ fn schema_advertises_the_node_catalog() {
         "generator",
         "otlp",
         "window",
+        "allowed_lateness",
         "on_missing",
         "AggregateOp",
     ] {
