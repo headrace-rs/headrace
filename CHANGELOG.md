@@ -1,3 +1,9 @@
+## 0.1.6 (2026-08-06)
+
+### Features
+
+- add sliding windows
+
 ## 0.1.5 (2026-08-06)
 
 ### Features
