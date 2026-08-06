@@ -119,13 +119,17 @@ fn parses_map_expression() {
     )
     .unwrap();
     let Transform::Map {
-        value, on_missing, ..
+        value,
+        on_missing,
+        on_invalid,
+        ..
     } = &p.transforms[0]
     else {
         panic!("expected map");
     };
     assert_eq!(value, "errors / total");
     assert_eq!(*on_missing, OnMissing::Skip); // defaulted
+    assert_eq!(*on_invalid, OnMissing::Skip); // defaulted
 }
 
 #[test]

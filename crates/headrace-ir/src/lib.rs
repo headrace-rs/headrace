@@ -84,10 +84,13 @@ pub enum Transform {
         input: String,
         /// The expression, evaluated per record and assigned to `value`.
         value: String,
-        /// What to do when the expression hits a missing/non-numeric field or a
-        /// non-finite result.
+        /// What to do when the expression references an absent field.
         #[serde(default)]
         on_missing: OnMissing,
+        /// What to do when a referenced field is present but non-numeric, or the result
+        /// is non-finite (e.g. divide by zero).
+        #[serde(default)]
+        on_invalid: OnMissing,
     },
 }
 
@@ -97,16 +100,20 @@ pub struct Aggregate {
     /// Numeric attribute to reduce; defaults to the record's value.
     #[serde(default)]
     pub field: Option<String>,
-    /// What to do when `field` is absent or non-numeric on a record.
+    /// What to do when `field` is absent on a record.
     #[serde(default)]
     pub on_missing: OnMissing,
+    /// What to do when `field` is present but non-numeric.
+    #[serde(default)]
+    pub on_invalid: OnMissing,
 }
 
-/// Policy for records whose aggregate `field` is absent or non-numeric.
+/// What to do with a record when a field cannot be read as a number, used for both an
+/// absent field (`on_missing`) and a present-but-non-numeric one (`on_invalid`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OnMissing {
-    /// Drop the record from the aggregate; the window warns with a per-flush count.
+    /// Drop the record; nodes meter it as dropped.
     #[default]
     Skip,
     /// Fail the pipeline.

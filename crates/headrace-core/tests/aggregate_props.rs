@@ -73,6 +73,7 @@ fn agg_over(op: AggregateOp, vs: &[f64]) -> Option<f64> {
             op,
             field: None,
             on_missing: OnMissing::Skip,
+            on_invalid: OnMissing::Skip,
         },
     );
     for &v in vs {

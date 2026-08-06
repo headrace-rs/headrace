@@ -45,8 +45,11 @@ pub async fn run(
             window::run(spec, rx, tx, nm).await
         }
         Transform::Map {
-            value, on_missing, ..
-        } => map::run(value, on_missing, rx, tx, nm).await,
+            value,
+            on_missing,
+            on_invalid,
+            ..
+        } => map::run(value, on_missing, on_invalid, rx, tx, nm).await,
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
     }

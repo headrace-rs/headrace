@@ -6,7 +6,7 @@
 
 use crate::backend::{Consumer, Producer};
 use crate::metrics::NodeMetrics;
-use crate::record::{AttrValue, Attrs, Record};
+use crate::record::{AttrValue, Attrs, Fault, Record};
 use anyhow::{Result, bail};
 use headrace_ir::{Aggregate, AggregateOp, OnMissing};
 use std::collections::{BTreeMap, HashMap};
@@ -162,20 +162,29 @@ impl Window {
     /// several for sliding). Windows that have already fired are skipped; a record whose
     /// windows have all fired is counted late. `Err` only under `OnMissing::Error`.
     pub fn on_record(&mut self, rec: &Record) -> Result<()> {
-        let v = match value_of(rec, &self.aggregate) {
-            Some(v) => v,
-            None => match self.aggregate.on_missing {
-                OnMissing::Skip => {
-                    self.skipped += 1;
-                    // A skipped record still advances the stream's event time.
-                    self.max_event = self.max_event.max(rec.ts_nanos);
-                    return Ok(());
+        let v = match rec.numeric(self.aggregate.field.as_deref()) {
+            Ok(v) => v,
+            Err(fault) => {
+                let policy = match fault {
+                    Fault::Missing => self.aggregate.on_missing,
+                    Fault::Invalid => self.aggregate.on_invalid,
+                };
+                match policy {
+                    OnMissing::Skip => {
+                        self.skipped += 1;
+                        // A skipped record still advances the stream's event time.
+                        self.max_event = self.max_event.max(rec.ts_nanos);
+                        return Ok(());
+                    }
+                    OnMissing::Error => {
+                        let field = self.aggregate.field.as_deref().unwrap_or("value");
+                        match fault {
+                            Fault::Missing => bail!("record missing numeric field `{field}`"),
+                            Fault::Invalid => bail!("record has non-numeric field `{field}`"),
+                        }
+                    }
                 }
-                OnMissing::Error => bail!(
-                    "record missing numeric field `{}`",
-                    self.aggregate.field.as_deref().unwrap_or("value")
-                ),
-            },
+            }
         };
         let watermark = self.watermark();
         let (key, attrs) = group_key(rec, &self.group_by);
@@ -265,16 +274,6 @@ fn group_key(rec: &Record, keys: &[String]) -> (GroupKey, Attrs) {
         }
     }
     (key, attrs)
-}
-
-/// The numeric sample for a record, or `None` if the configured field is
-/// absent or non-numeric. No silent fallback to `value` - that is the caller's
-/// `on_missing` policy to decide.
-fn value_of(rec: &Record, agg: &Aggregate) -> Option<f64> {
-    match agg.field.as_deref() {
-        None | Some("value") => Some(rec.value),
-        Some(f) => rec.lookup(f).and_then(AttrValue::as_f64),
-    }
 }
 
 /// The window transform's settings, parsed from the IR node.
@@ -473,6 +472,25 @@ mod tests {
     }
 
     #[test]
+    fn missing_and_invalid_use_separate_policies() {
+        // on_missing: skip, on_invalid: error - an absent field is skipped, but a present
+        // non-numeric field fails.
+        let aggregate = Aggregate {
+            op: AggregateOp::Sum,
+            field: Some("lat".into()),
+            on_missing: OnMissing::Skip,
+            on_invalid: OnMissing::Error,
+        };
+        let mut w = Window::new(SIZE, SIZE, 0, vec![], aggregate);
+        w.on_record(&rec("m", 0.0, &[])).unwrap(); // "lat" absent -> skipped
+        assert!(
+            w.on_record(&rec("m", 0.0, &[("lat", AttrValue::Str("x".into()))]))
+                .is_err(),
+            "non-numeric `lat` must hit on_invalid=error"
+        );
+    }
+
+    #[test]
     fn named_numeric_field_is_aggregated() {
         let mut w = win(AggregateOp::Sum, Some("lat"), OnMissing::Error, &[]);
         w.on_record(&rec("m", 0.0, &[("lat", AttrValue::Double(2.5))]))
@@ -594,6 +612,7 @@ mod tests {
             op,
             field: field.map(str::to_string),
             on_missing,
+            on_invalid: on_missing,
         }
     }
 

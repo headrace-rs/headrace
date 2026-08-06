@@ -4,7 +4,7 @@
 //! names. Deliberately closed - no I/O, branching, or functions - so it parses and
 //! validates statically and evaluates cheaply. Arbitrary logic is `wasm`'s job.
 
-use crate::record::{AttrValue, Record};
+use crate::record::{Fault, Record};
 
 /// A parse failure, with a human-readable reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,9 +29,10 @@ impl Expr {
         Ok(Expr(node))
     }
 
-    /// Evaluate against `rec`. `None` if a referenced field is missing or non-numeric;
-    /// arithmetic on present operands (including a non-finite result) yields `Some`.
-    pub fn eval(&self, rec: &Record) -> Option<f64> {
+    /// Evaluate against `rec`. `Err` distinguishes a referenced field that is absent
+    /// ([`Fault::Missing`]) from one that is present but non-numeric ([`Fault::Invalid`]);
+    /// arithmetic on present operands yields `Ok`, even when the result is non-finite.
+    pub fn eval(&self, rec: &Record) -> Result<f64, Fault> {
         self.0.eval(rec)
     }
 }
@@ -58,15 +59,15 @@ enum Op {
 }
 
 impl Node {
-    fn eval(&self, rec: &Record) -> Option<f64> {
+    fn eval(&self, rec: &Record) -> Result<f64, Fault> {
         match self {
-            Node::Num(n) => Some(*n),
-            Node::Value => Some(rec.value),
-            Node::Field(name) => rec.lookup(name).and_then(AttrValue::as_f64),
-            Node::Neg(e) => Some(-e.eval(rec)?),
+            Node::Num(n) => Ok(*n),
+            Node::Value => Ok(rec.value),
+            Node::Field(name) => rec.numeric(Some(name)),
+            Node::Neg(e) => Ok(-e.eval(rec)?),
             Node::Bin(op, l, r) => {
                 let (a, b) = (l.eval(rec)?, r.eval(rec)?);
-                Some(match op {
+                Ok(match op {
                     Op::Add => a + b,
                     Op::Sub => a - b,
                     Op::Mul => a * b,
@@ -216,7 +217,7 @@ fn infix(token: &Token) -> Option<(Op, u8, u8)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record::Attrs;
+    use crate::record::{AttrValue, Attrs};
     use proptest::prelude::*;
 
     #[test]
@@ -233,15 +234,32 @@ mod tests {
     #[test]
     fn reads_value_and_fields() {
         let r = rec(100.0, &[("errors", 3.0), ("total", 12.0)]);
-        assert_eq!(eval("value / 1000", &r), Some(0.1));
-        assert_eq!(eval("errors / total", &r), Some(0.25));
-        assert_eq!(eval("value - errors", &r), Some(97.0));
+        assert_eq!(eval("value / 1000", &r), Ok(0.1));
+        assert_eq!(eval("errors / total", &r), Ok(0.25));
+        assert_eq!(eval("value - errors", &r), Ok(97.0));
     }
 
     #[test]
-    fn missing_or_non_numeric_field_is_none() {
+    fn distinguishes_missing_from_non_numeric() {
         let r = rec(1.0, &[("errors", 3.0)]);
-        assert_eq!(eval("errors / total", &r), None, "total is absent");
+        assert_eq!(
+            eval("errors / total", &r),
+            Err(Fault::Missing),
+            "total is absent"
+        );
+        // A present but non-numeric field is Invalid, not Missing.
+        let mut attrs = Attrs::new();
+        attrs.insert("label".into(), AttrValue::Str("x".into()));
+        let r2 = Record {
+            ts_nanos: 1,
+            start_ts_nanos: None,
+            resource: Attrs::new(),
+            scope: None,
+            name: "m".into(),
+            value: 1.0,
+            attrs,
+        };
+        assert_eq!(eval("label + 1", &r2), Err(Fault::Invalid));
     }
 
     #[test]
@@ -274,7 +292,7 @@ mod tests {
 
     // --- helpers ---
 
-    fn eval(expr: &str, rec: &Record) -> Option<f64> {
+    fn eval(expr: &str, rec: &Record) -> Result<f64, Fault> {
         Expr::parse(expr).expect("parses").eval(rec)
     }
 

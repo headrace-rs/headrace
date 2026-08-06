@@ -54,10 +54,32 @@ pub struct Record {
     pub attrs: Attrs,
 }
 
+/// Why a field could not be read as a number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fault {
+    /// The field is absent.
+    Missing,
+    /// The field is present but not numeric.
+    Invalid,
+}
+
 impl Record {
     /// Attribute lookup, falling back to resource-level attributes.
     pub fn lookup(&self, key: &str) -> Option<&AttrValue> {
         self.attrs.get(key).or_else(|| self.resource.get(key))
+    }
+
+    /// Resolve a numeric field: `None` or `"value"` is the record's `value`; any other
+    /// name is a numeric attribute. `Err` distinguishes an absent field ([`Fault::Missing`])
+    /// from a present, non-numeric one ([`Fault::Invalid`]).
+    pub fn numeric(&self, field: Option<&str>) -> Result<f64, Fault> {
+        match field {
+            None | Some("value") => Ok(self.value),
+            Some(name) => match self.lookup(name) {
+                None => Err(Fault::Missing),
+                Some(v) => v.as_f64().ok_or(Fault::Invalid),
+            },
+        }
     }
 }
 
