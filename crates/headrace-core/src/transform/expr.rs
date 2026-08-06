@@ -217,14 +217,7 @@ fn infix(token: &Token) -> Option<(Op, u8, u8)> {
 mod tests {
     use super::*;
     use crate::record::Attrs;
-
-    fn eval(expr: &str, rec: &Record) -> Option<f64> {
-        Expr::parse(expr).expect("parses").eval(rec)
-    }
-
-    fn constant(expr: &str) -> f64 {
-        eval(expr, &rec(0.0, &[])).expect("no fields referenced")
-    }
+    use proptest::prelude::*;
 
     #[test]
     fn arithmetic_precedence_and_associativity() {
@@ -256,6 +249,37 @@ mod tests {
         for bad in ["", "1 +", "1 + + 2", "(1 + 2", "value $ 2", "1 2"] {
             assert!(Expr::parse(bad).is_err(), "`{bad}` should not parse");
         }
+    }
+
+    proptest! {
+        /// Parsing must never panic - any input yields `Ok` or a `ParseError`.
+        #[test]
+        fn parsing_never_panics(s in ".*") {
+            let _ = Expr::parse(&s);
+        }
+
+        /// Precedence and grouping match manual evaluation. Integer-valued operands keep
+        /// f64 arithmetic exact; the divisor is nonzero.
+        #[test]
+        fn precedence_matches_manual_evaluation(
+            a in 0i64..1000, b in 0i64..1000, c in 1i64..1000,
+        ) {
+            let (fa, fb, fc) = (a as f64, b as f64, c as f64);
+            prop_assert_eq!(constant(&format!("{a} + {b} * {c}")), fa + fb * fc);
+            prop_assert_eq!(constant(&format!("({a} + {b}) * {c}")), (fa + fb) * fc);
+            prop_assert_eq!(constant(&format!("{a} - {b} - {c}")), fa - fb - fc);
+            prop_assert_eq!(constant(&format!("{a} / {c}")), fa / fc);
+        }
+    }
+
+    // --- helpers ---
+
+    fn eval(expr: &str, rec: &Record) -> Option<f64> {
+        Expr::parse(expr).expect("parses").eval(rec)
+    }
+
+    fn constant(expr: &str) -> f64 {
+        eval(expr, &rec(0.0, &[])).expect("no fields referenced")
     }
 
     fn rec(value: f64, fields: &[(&str, f64)]) -> Record {
