@@ -1,7 +1,7 @@
 # 0010. Cross-series arithmetic
 
-- Status: Proposed
-- Date: 2026-08-04
+- Status: Accepted
+- Date: 2026-08-06
 
 ## Context
 
@@ -20,20 +20,26 @@ Prior art frames two shapes:
 - **Flink / Kafka Streams** - an explicit `join` co-partitioned on a key, then a `map`/expression
   over the joined record. Explicit, and locality falls out of co-partitioning.
 
-## Decision (proposed)
+## Decision
 
-Provide it in two layers, which is what the roadmap's `map` + `join` (v0.3) are for:
+Provide it in two layers - `map` (v0.3, first) then `join` (v0.3, next):
 
+- A **`map`/expression** transform rewrites a record's `value` from a **closed numeric
+  expression**: the binary operators `+ - * / %` and `^` (power), unary `-`, parentheses, number
+  literals, the keyword `value`, and bare references to numeric attributes - e.g. `errors / total`,
+  `value / 1000`, `a - b`. It is deliberately closed (no I/O, branching, or string ops) so it parses
+  and validates statically and evaluates cheaply. A missing or non-numeric field, and a non-finite
+  result, follow the window's `on_missing: skip | error`. Functions (`min`, `sqrt`, ...) and more
+  operators come later (~v0.7); arbitrary per-record logic is what **`wasm`** (v0.4) is for.
 - A **`join`** transform takes two inputs co-partitioned on the shared `group_by`, buffers each
-  side per `(group_key, window)`, and emits a combined record when both sides are present. This is
-  the mechanism, and it keeps the combine on one worker (ADR-0007). Join nodes make the IR's single
-  `input` grow to `inputs: [a, b]`.
-- A **`map`/expression** transform then computes the value (`a - b`, `a / b`) as a small closed
-  expression over the joined fields - not arbitrary code, which is what `wasm` is for.
+  side per `(group_key, window)`, and emits a combined record when both sides are present. It keeps
+  the combine on one worker (ADR-0007) and grows the IR's single `input` to `inputs: [a, b]`.
+  Cross-series math is then `join` (align a and b in the same window) followed by `map` (`a - b`).
 
 A PromQL-style *surface* (a binary op matched by labels, no explicit join in the IR) is attractive
-for authoring, and is the likely ergonomic layer an agent targets - but it compiles **down to**
-join + map. We defer committing to that surface syntax until join + map exist.
+for authoring and compiles **down to** join + map; we defer that surface until both exist. A
+rename/remap of record keys (e.g. the metric name) is a related authoring convenience, also
+deferred.
 
 ## Consequences
 
