@@ -70,18 +70,19 @@ fn parses_otlp_source_and_sink() {
 }
 
 #[test]
-fn window_lateness_and_idle_timeout_parse_and_default() {
+fn window_options_parse_and_default() {
     let p: Pipeline = serde_yaml::from_str(
         r#"
         sources: [{ type: generator, id: g }]
         transforms:
-          - { type: window, id: w, input: g, size: 5s, allowed_lateness: 2s, idle_timeout: 30s, aggregate: { op: count } }
+          - { type: window, id: w, input: g, size: 5s, slide: 2s, allowed_lateness: 2s, idle_timeout: 30s, aggregate: { op: count } }
           - { type: window, id: w2, input: w, size: 5s, aggregate: { op: count } }
         sinks: [{ type: stdout, id: o, input: w2 }]
         "#,
     )
     .unwrap();
     let Transform::Window {
+        slide,
         allowed_lateness,
         idle_timeout,
         ..
@@ -89,10 +90,12 @@ fn window_lateness_and_idle_timeout_parse_and_default() {
     else {
         panic!("expected window");
     };
+    assert_eq!(slide.as_deref(), Some("2s"));
     assert_eq!(allowed_lateness.as_deref(), Some("2s"));
     assert_eq!(idle_timeout.as_deref(), Some("30s"));
-    // Omitting both leaves them unset.
+    // Omitting them leaves them unset: tumbling, no grace, no idle flush.
     let Transform::Window {
+        slide,
         allowed_lateness,
         idle_timeout,
         ..
@@ -100,6 +103,7 @@ fn window_lateness_and_idle_timeout_parse_and_default() {
     else {
         panic!("expected window");
     };
+    assert_eq!(*slide, None);
     assert_eq!(*allowed_lateness, None);
     assert_eq!(*idle_timeout, None);
 }
@@ -121,6 +125,7 @@ fn schema_advertises_the_node_catalog() {
         "generator",
         "otlp",
         "window",
+        "slide",
         "allowed_lateness",
         "on_missing",
         "AggregateOp",

@@ -25,6 +25,7 @@ pub async fn run(
         Transform::Filter { key, equals, .. } => filter::run(key, equals, rx, tx, nm).await,
         Transform::Window {
             size,
+            slide,
             allowed_lateness,
             idle_timeout,
             group_by,
@@ -33,6 +34,7 @@ pub async fn run(
         } => {
             let spec = window::Spec {
                 size,
+                slide,
                 allowed_lateness,
                 idle_timeout,
                 group_by,

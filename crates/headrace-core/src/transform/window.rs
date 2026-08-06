@@ -98,6 +98,9 @@ impl Agg {
 /// ([`run`]) owns only I/O.
 pub struct Window {
     size_nanos: u64,
+    /// Step between window starts. Equal to `size_nanos` for tumbling; smaller for
+    /// sliding, where a record falls in `ceil(size / slide)` overlapping windows.
+    slide_nanos: u64,
     lateness_nanos: u64,
     group_by: Vec<String>,
     aggregate: Aggregate,
@@ -112,12 +115,14 @@ pub struct Window {
 impl Window {
     pub fn new(
         size_nanos: u64,
+        slide_nanos: u64,
         lateness_nanos: u64,
         group_by: Vec<String>,
         aggregate: Aggregate,
     ) -> Self {
         Self {
             size_nanos,
+            slide_nanos,
             lateness_nanos,
             group_by,
             aggregate,
@@ -134,19 +139,29 @@ impl Window {
         self.max_event.saturating_sub(self.lateness_nanos)
     }
 
-    /// Start of the tumbling window containing event time `t`.
-    fn window_start(&self, t: u64) -> u64 {
-        t - (t % self.size_nanos)
+    /// Starts of every window containing event time `t`. Tumbling (`slide == size`)
+    /// yields one; sliding yields the overlapping windows, newest first.
+    fn window_starts(&self, t: u64) -> Vec<u64> {
+        let (size, slide) = (self.size_nanos, self.slide_nanos);
+        let mut start = (t / slide) * slide; // newest slide-aligned start <= t
+        let mut starts = Vec::new();
+        loop {
+            starts.push(start);
+            if start < slide {
+                break; // reached the epoch-aligned first window
+            }
+            start -= slide;
+            if start + size <= t {
+                break; // this earlier window no longer contains t
+            }
+        }
+        starts
     }
 
-    /// Fold one record into its event-time window. A record whose window has already
-    /// fired is counted late and dropped. `Err` only under `OnMissing::Error`.
+    /// Fold one record into every event-time window it belongs to (one for tumbling,
+    /// several for sliding). Windows that have already fired are skipped; a record whose
+    /// windows have all fired is counted late. `Err` only under `OnMissing::Error`.
     pub fn on_record(&mut self, rec: &Record) -> Result<()> {
-        let start = self.window_start(rec.ts_nanos);
-        if start + self.size_nanos <= self.watermark() {
-            self.late += 1;
-            return Ok(());
-        }
         let v = match value_of(rec, &self.aggregate) {
             Some(v) => v,
             None => match self.aggregate.on_missing {
@@ -162,14 +177,26 @@ impl Window {
                 ),
             },
         };
+        let watermark = self.watermark();
         let (key, attrs) = group_key(rec, &self.group_by);
-        self.windows
-            .entry(start)
-            .or_default()
-            .entry(key)
-            .or_insert_with(|| Agg::new(rec.name.clone(), attrs))
-            .add(v);
-        self.max_event = self.max_event.max(rec.ts_nanos);
+        let mut folded = false;
+        for start in self.window_starts(rec.ts_nanos) {
+            if start + self.size_nanos <= watermark {
+                continue; // this window has already fired
+            }
+            self.windows
+                .entry(start)
+                .or_default()
+                .entry(key.clone())
+                .or_insert_with(|| Agg::new(rec.name.clone(), attrs.clone()))
+                .add(v);
+            folded = true;
+        }
+        if folded {
+            self.max_event = self.max_event.max(rec.ts_nanos);
+        } else {
+            self.late += 1;
+        }
         Ok(())
     }
 
@@ -253,6 +280,7 @@ fn value_of(rec: &Record, agg: &Aggregate) -> Option<f64> {
 /// The window transform's settings, parsed from the IR node.
 pub(super) struct Spec {
     pub size: String,
+    pub slide: Option<String>,
     pub allowed_lateness: Option<String>,
     pub idle_timeout: Option<String>,
     pub group_by: Vec<String>,
@@ -271,12 +299,17 @@ pub(super) async fn run(
 ) -> Result<()> {
     let Spec {
         size,
+        slide,
         allowed_lateness,
         idle_timeout,
         group_by,
         aggregate,
     } = spec;
     let size_nanos = humantime::parse_duration(&size)?.as_nanos() as u64;
+    let slide_nanos = match &slide {
+        Some(s) => humantime::parse_duration(s)?.as_nanos() as u64,
+        None => size_nanos, // tumbling
+    };
     let lateness_nanos = match &allowed_lateness {
         Some(l) => humantime::parse_duration(l)?.as_nanos() as u64,
         None => 0,
@@ -285,7 +318,7 @@ pub(super) async fn run(
         Some(t) => Some(humantime::parse_duration(t)?),
         None => None,
     };
-    let mut win = Window::new(size_nanos, lateness_nanos, group_by, aggregate);
+    let mut win = Window::new(size_nanos, slide_nanos, lateness_nanos, group_by, aggregate);
 
     loop {
         tokio::select! {
@@ -494,6 +527,7 @@ mod tests {
         // watermark = max_event - 500, so [0, SIZE) fires only once max_event >= SIZE+500.
         let mut w = Window::new(
             SIZE,
+            SIZE, // tumbling
             500,
             vec![],
             agg(AggregateOp::Count, None, OnMissing::Skip),
@@ -511,6 +545,46 @@ mod tests {
             out[0].value, 3.0,
             "the three records in [0, SIZE), including the out-of-order one"
         );
+    }
+
+    // --- sliding windows ---
+
+    #[test]
+    fn sliding_folds_a_record_into_overlapping_windows() {
+        // size 1000, slide 500: t=700 falls in both [0,1000) and [500,1500).
+        let mut w = Window::new(
+            1000,
+            500,
+            0,
+            vec![],
+            agg(AggregateOp::Count, None, OnMissing::Skip),
+        );
+        w.on_record(&rec_at("m", 1.0, 700)).unwrap();
+        let mut out = w.drain_all();
+        out.sort_by_key(|r| r.start_ts_nanos);
+        assert_eq!(out.len(), 2, "one record, two overlapping windows");
+        assert_eq!((out[0].start_ts_nanos, out[0].ts_nanos), (Some(0), 1000));
+        assert_eq!((out[1].start_ts_nanos, out[1].ts_nanos), (Some(500), 1500));
+        assert!(out.iter().all(|r| r.value == 1.0));
+    }
+
+    #[test]
+    fn sliding_windows_fire_as_the_watermark_advances() {
+        let mut w = Window::new(
+            1000,
+            500,
+            0,
+            vec![],
+            agg(AggregateOp::Count, None, OnMissing::Skip),
+        );
+        w.on_record(&rec_at("m", 1.0, 200)).unwrap(); // [0,1000)
+        w.on_record(&rec_at("m", 1.0, 700)).unwrap(); // [0,1000) and [500,1500)
+        assert!(w.drain_ready().is_empty(), "watermark 700 < any window end");
+        w.on_record(&rec_at("m", 1.0, 1100)).unwrap(); // watermark -> 1100
+        let out = w.drain_ready();
+        assert_eq!(out.len(), 1, "only [0,1000) has closed");
+        assert_eq!(out[0].start_ts_nanos, Some(0));
+        assert_eq!(out[0].value, 2.0, "the records at 200 and 700");
     }
 
     // --- helpers ---
@@ -531,6 +605,7 @@ mod tests {
     ) -> Window {
         Window::new(
             SIZE,
+            SIZE, // tumbling: slide == size
             0,
             group_by.iter().map(|s| s.to_string()).collect(),
             agg(op, field, on_missing),

@@ -56,9 +56,13 @@ pub enum Transform {
     Window {
         id: String,
         input: String,
-        #[serde(default)]
-        kind: WindowKind,
+        /// Window length.
         size: String,
+        /// Step between window starts. Omitted (or equal to `size`) makes the windows
+        /// tumbling (non-overlapping); a value smaller than `size` makes them sliding, so
+        /// a record can fall in several overlapping windows.
+        #[serde(default)]
+        slide: Option<String>,
         /// Grace period, in event time, to keep waiting for late records past a
         /// window's end before firing it. Defaults to none (fire as soon as the
         /// watermark reaches the window end).
@@ -73,14 +77,6 @@ pub enum Transform {
         group_by: Vec<String>,
         aggregate: Aggregate,
     },
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum WindowKind {
-    #[default]
-    Tumbling,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

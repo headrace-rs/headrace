@@ -18,4 +18,6 @@ pub enum ValidationError {
         #[source]
         source: humantime::DurationError,
     },
+    #[error("window `{node}`: {reason}")]
+    InvalidWindow { node: String, reason: String },
 }

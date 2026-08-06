@@ -5,6 +5,7 @@ use crate::{sink, source, transform};
 use anyhow::{Result, anyhow};
 use headrace_ir::{Pipeline, Source, Transform};
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 use tokio::task::{JoinError, JoinSet};
 
 /// Static checks: unique ids, durations parse, input refs resolve, each output has at
@@ -35,17 +36,34 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
         if let Transform::Window {
             id,
             size,
+            slide,
             allowed_lateness,
             idle_timeout,
             ..
         } = o
         {
-            parse_duration(id, size)?;
+            let size = parse_duration(id, size)?;
             if let Some(lateness) = allowed_lateness {
                 parse_duration(id, lateness)?;
             }
             if let Some(timeout) = idle_timeout {
                 parse_duration(id, timeout)?;
+            }
+            if let Some(slide) = slide {
+                let slide = parse_duration(id, slide)?;
+                if slide.is_zero() {
+                    return Err(ValidationError::InvalidWindow {
+                        node: id.to_string(),
+                        reason: "slide must be greater than zero".to_string(),
+                    });
+                }
+                if slide > size {
+                    return Err(ValidationError::InvalidWindow {
+                        node: id.to_string(),
+                        reason: "slide is longer than size; records would fall between windows"
+                            .to_string(),
+                    });
+                }
             }
         }
     }
@@ -72,14 +90,12 @@ fn node_ids(p: &Pipeline) -> impl Iterator<Item = &str> {
         .chain(p.sinks.iter().map(|s| s.id()))
 }
 
-fn parse_duration(node: &str, value: &str) -> Result<(), ValidationError> {
-    humantime::parse_duration(value)
-        .map(|_| ())
-        .map_err(|source| ValidationError::BadDuration {
-            node: node.to_string(),
-            value: value.to_string(),
-            source,
-        })
+fn parse_duration(node: &str, value: &str) -> Result<Duration, ValidationError> {
+    humantime::parse_duration(value).map_err(|source| ValidationError::BadDuration {
+        node: node.to_string(),
+        value: value.to_string(),
+        source,
+    })
 }
 
 fn check_edge<'a>(
@@ -353,6 +369,22 @@ mod tests {
         assert!(matches!(
             validate(&p),
             Err(ValidationError::BadDuration { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_slide_longer_than_size() {
+        let p = pipeline(
+            r#"
+            sources: [{ type: generator, id: gen, interval: 1s }]
+            transforms:
+              - { type: window, id: w, input: gen, size: 5s, slide: 10s, aggregate: { op: count } }
+            sinks: [{ type: stdout, id: out, input: w }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&p),
+            Err(ValidationError::InvalidWindow { .. })
         ));
     }
 

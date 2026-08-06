@@ -66,6 +66,7 @@ fn agg_over(op: AggregateOp, vs: &[f64]) -> Option<f64> {
     // All samples share ts 1, so they land in one window; drain it in full.
     let mut w = Window::new(
         1000,
+        1000, // tumbling
         0,
         vec![],
         Aggregate {
