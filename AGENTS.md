@@ -42,6 +42,9 @@ cargo test --workspace --all-features
 - Unit tests inline (`#[cfg(test)] mod tests`); public-surface and cross-crate tests in `tests/`.
 - Put helpers *after* the tests that use them.
 - Prefer deterministic time: drive tokio's paused clock, not sleeps or `yield_now` loops.
+- Coverage: never land a change that lowers workspace coverage below its current level
+  (about 90% line / 87% region). New code ships with tests that hold or raise it. Measure
+  with `cargo llvm-cov --workspace --all-features --summary-only`.
 
 ## Terminology
 
