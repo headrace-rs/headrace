@@ -9,12 +9,12 @@ use crate::backend::{Consumer, Producer};
 use crate::metrics::NodeMetrics;
 use crate::record::Fault;
 use anyhow::{Result, bail};
-use headrace_ir::OnMissing;
+use headrace_ir::FaultAction;
 
 pub(super) async fn run(
     expr: String,
-    on_missing: OnMissing,
-    on_invalid: OnMissing,
+    on_missing: FaultAction,
+    on_invalid: FaultAction,
     mut rx: Box<dyn Consumer>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
@@ -39,8 +39,8 @@ pub(super) async fn run(
             Err(Fault::Invalid) => on_invalid,
         };
         match policy {
-            OnMissing::Skip => nm.dropped(1),
-            OnMissing::Error => bail!("map: could not evaluate the expression for a record"),
+            FaultAction::Skip => nm.dropped(1),
+            FaultAction::Error => bail!("map: could not evaluate the expression for a record"),
         }
     }
     Ok(())
@@ -59,8 +59,8 @@ mod tests {
     async fn rewrites_value_from_the_expression() {
         let mut out = drive(
             "value / 1000",
-            OnMissing::Skip,
-            OnMissing::Skip,
+            FaultAction::Skip,
+            FaultAction::Skip,
             rec(2000.0),
         )
         .await;
@@ -71,7 +71,13 @@ mod tests {
     #[tokio::test]
     async fn skips_records_it_cannot_evaluate() {
         // `missing` is absent, so the record is dropped and nothing is forwarded.
-        let mut out = drive("missing * 2", OnMissing::Skip, OnMissing::Skip, rec(1.0)).await;
+        let mut out = drive(
+            "missing * 2",
+            FaultAction::Skip,
+            FaultAction::Skip,
+            rec(1.0),
+        )
+        .await;
         assert!(out.recv().await.is_none());
     }
 
@@ -88,8 +94,8 @@ mod tests {
         let nm = NodeMetrics::bind(&metrics, "m", NodeKind::Map);
         let task = tokio::spawn(run(
             "value / 0".to_string(),
-            OnMissing::Skip,
-            OnMissing::Error,
+            FaultAction::Skip,
+            FaultAction::Error,
             rx,
             tx,
             nm,
@@ -105,8 +111,8 @@ mod tests {
     /// Run `expr` over a single `rec` and return the output consumer, input closed.
     async fn drive(
         expr: &str,
-        on_missing: OnMissing,
-        on_invalid: OnMissing,
+        on_missing: FaultAction,
+        on_invalid: FaultAction,
         rec: Record,
     ) -> Box<dyn Consumer> {
         let mut be = InProcess::new(8);

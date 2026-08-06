@@ -26,7 +26,7 @@ fn parses_the_shipped_example() {
     };
     assert_eq!(aggregate.op, AggregateOp::Avg);
     assert_eq!(aggregate.field.as_deref(), Some("value"));
-    assert_eq!(aggregate.on_missing, OnMissing::Skip); // defaulted
+    assert_eq!(aggregate.on_missing, FaultAction::Skip); // defaulted
     assert_eq!(group_by, &["service.name", "http.route"]);
 }
 
@@ -128,8 +128,8 @@ fn parses_map_expression() {
         panic!("expected map");
     };
     assert_eq!(value, "errors / total");
-    assert_eq!(*on_missing, OnMissing::Skip); // defaulted
-    assert_eq!(*on_invalid, OnMissing::Skip); // defaulted
+    assert_eq!(*on_missing, FaultAction::Skip); // defaulted
+    assert_eq!(*on_invalid, FaultAction::Skip); // defaulted
 }
 
 #[test]

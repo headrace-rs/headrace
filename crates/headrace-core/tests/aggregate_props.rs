@@ -8,7 +8,7 @@
 
 use headrace_core::record::{Attrs, Record};
 use headrace_core::transform::Window;
-use headrace_ir::{Aggregate, AggregateOp, OnMissing};
+use headrace_ir::{Aggregate, AggregateOp, FaultAction};
 use proptest::prelude::*;
 
 proptest! {
@@ -72,8 +72,8 @@ fn agg_over(op: AggregateOp, vs: &[f64]) -> Option<f64> {
         Aggregate {
             op,
             field: None,
-            on_missing: OnMissing::Skip,
-            on_invalid: OnMissing::Skip,
+            on_missing: FaultAction::Skip,
+            on_invalid: FaultAction::Skip,
         },
     );
     for &v in vs {

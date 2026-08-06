@@ -8,7 +8,7 @@ use crate::backend::{Consumer, Producer};
 use crate::metrics::NodeMetrics;
 use crate::record::{AttrValue, Attrs, Fault, Record};
 use anyhow::{Result, bail};
-use headrace_ir::{Aggregate, AggregateOp, OnMissing};
+use headrace_ir::{Aggregate, AggregateOp, FaultAction};
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
@@ -160,7 +160,7 @@ impl Window {
 
     /// Fold one record into every event-time window it belongs to (one for tumbling,
     /// several for sliding). Windows that have already fired are skipped; a record whose
-    /// windows have all fired is counted late. `Err` only under `OnMissing::Error`.
+    /// windows have all fired is counted late. `Err` only under `FaultAction::Error`.
     pub fn on_record(&mut self, rec: &Record) -> Result<()> {
         let v = match rec.numeric(self.aggregate.field.as_deref()) {
             Ok(v) => v,
@@ -170,13 +170,13 @@ impl Window {
                     Fault::Invalid => self.aggregate.on_invalid,
                 };
                 match policy {
-                    OnMissing::Skip => {
+                    FaultAction::Skip => {
                         self.skipped += 1;
                         // A skipped record still advances the stream's event time.
                         self.max_event = self.max_event.max(rec.ts_nanos);
                         return Ok(());
                     }
-                    OnMissing::Error => {
+                    FaultAction::Error => {
                         let field = self.aggregate.field.as_deref().unwrap_or("value");
                         match fault {
                             Fault::Missing => bail!("record missing numeric field `{field}`"),
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn drain_emits_window_bounds_and_resets() {
-        let mut w = win(AggregateOp::Sum, None, OnMissing::Skip, &[]);
+        let mut w = win(AggregateOp::Sum, None, FaultAction::Skip, &[]);
         w.on_record(&rec("m", 1.0, &[])).unwrap(); // ts 1 -> window [0, SIZE)
         let out = w.drain_all();
         assert_eq!(out[0].start_ts_nanos, Some(0));
@@ -420,7 +420,12 @@ mod tests {
 
     #[test]
     fn groups_split_by_key_and_carry_attrs() {
-        let mut w = win(AggregateOp::Count, None, OnMissing::Skip, &["service.name"]);
+        let mut w = win(
+            AggregateOp::Count,
+            None,
+            FaultAction::Skip,
+            &["service.name"],
+        );
         for svc in ["a", "a", "b"] {
             w.on_record(&rec(
                 "m",
@@ -443,7 +448,7 @@ mod tests {
     #[test]
     fn typed_key_does_not_collide_across_value_types() {
         // Int(1) and Str("1") must be different groups (the old string key merged them).
-        let mut w = win(AggregateOp::Count, None, OnMissing::Skip, &["k"]);
+        let mut w = win(AggregateOp::Count, None, FaultAction::Skip, &["k"]);
         w.on_record(&rec("m", 1.0, &[("k", AttrValue::Int(1))]))
             .unwrap();
         w.on_record(&rec("m", 1.0, &[("k", AttrValue::Str("1".into()))]))
@@ -456,7 +461,7 @@ mod tests {
     #[test]
     fn on_missing_skip_drops_record_no_silent_fallback() {
         // field `lat` is absent -> record is skipped, NOT folded as `value`.
-        let mut w = win(AggregateOp::Count, Some("lat"), OnMissing::Skip, &[]);
+        let mut w = win(AggregateOp::Count, Some("lat"), FaultAction::Skip, &[]);
         w.on_record(&rec("m", 99.0, &[])).unwrap();
         assert!(
             w.drain_all().is_empty(),
@@ -467,7 +472,7 @@ mod tests {
 
     #[test]
     fn on_missing_error_fails() {
-        let mut w = win(AggregateOp::Avg, Some("lat"), OnMissing::Error, &[]);
+        let mut w = win(AggregateOp::Avg, Some("lat"), FaultAction::Error, &[]);
         assert!(w.on_record(&rec("m", 1.0, &[])).is_err());
     }
 
@@ -478,8 +483,8 @@ mod tests {
         let aggregate = Aggregate {
             op: AggregateOp::Sum,
             field: Some("lat".into()),
-            on_missing: OnMissing::Skip,
-            on_invalid: OnMissing::Error,
+            on_missing: FaultAction::Skip,
+            on_invalid: FaultAction::Error,
         };
         let mut w = Window::new(SIZE, SIZE, 0, vec![], aggregate);
         w.on_record(&rec("m", 0.0, &[])).unwrap(); // "lat" absent -> skipped
@@ -492,7 +497,7 @@ mod tests {
 
     #[test]
     fn named_numeric_field_is_aggregated() {
-        let mut w = win(AggregateOp::Sum, Some("lat"), OnMissing::Error, &[]);
+        let mut w = win(AggregateOp::Sum, Some("lat"), FaultAction::Error, &[]);
         w.on_record(&rec("m", 0.0, &[("lat", AttrValue::Double(2.5))]))
             .unwrap();
         w.on_record(&rec("m", 0.0, &[("lat", AttrValue::Int(3))]))
@@ -513,7 +518,7 @@ mod tests {
 
     #[test]
     fn fires_when_watermark_passes_window_end() {
-        let mut w = win(AggregateOp::Count, None, OnMissing::Skip, &[]);
+        let mut w = win(AggregateOp::Count, None, FaultAction::Skip, &[]);
         w.on_record(&rec_at("m", 1.0, 1)).unwrap(); // window [0, SIZE)
         w.on_record(&rec_at("m", 1.0, 500)).unwrap();
         assert!(
@@ -530,7 +535,7 @@ mod tests {
 
     #[test]
     fn late_record_is_dropped_and_counted() {
-        let mut w = win(AggregateOp::Count, None, OnMissing::Skip, &[]);
+        let mut w = win(AggregateOp::Count, None, FaultAction::Skip, &[]);
         w.on_record(&rec_at("m", 1.0, 100)).unwrap(); // [0, SIZE)
         w.on_record(&rec_at("m", 1.0, SIZE + 500)).unwrap(); // watermark -> SIZE+500
         assert_eq!(w.drain_ready().len(), 1, "[0, SIZE) fires");
@@ -548,7 +553,7 @@ mod tests {
             SIZE, // tumbling
             500,
             vec![],
-            agg(AggregateOp::Count, None, OnMissing::Skip),
+            agg(AggregateOp::Count, None, FaultAction::Skip),
         );
         w.on_record(&rec_at("m", 1.0, 100)).unwrap(); // [0, SIZE)
         w.on_record(&rec_at("m", 1.0, 200)).unwrap(); // [0, SIZE)
@@ -575,7 +580,7 @@ mod tests {
             500,
             0,
             vec![],
-            agg(AggregateOp::Count, None, OnMissing::Skip),
+            agg(AggregateOp::Count, None, FaultAction::Skip),
         );
         w.on_record(&rec_at("m", 1.0, 700)).unwrap();
         let mut out = w.drain_all();
@@ -593,7 +598,7 @@ mod tests {
             500,
             0,
             vec![],
-            agg(AggregateOp::Count, None, OnMissing::Skip),
+            agg(AggregateOp::Count, None, FaultAction::Skip),
         );
         w.on_record(&rec_at("m", 1.0, 200)).unwrap(); // [0,1000)
         w.on_record(&rec_at("m", 1.0, 700)).unwrap(); // [0,1000) and [500,1500)
@@ -607,7 +612,7 @@ mod tests {
 
     // --- helpers ---
 
-    fn agg(op: AggregateOp, field: Option<&str>, on_missing: OnMissing) -> Aggregate {
+    fn agg(op: AggregateOp, field: Option<&str>, on_missing: FaultAction) -> Aggregate {
         Aggregate {
             op,
             field: field.map(str::to_string),
@@ -619,7 +624,7 @@ mod tests {
     fn win(
         op: AggregateOp,
         field: Option<&str>,
-        on_missing: OnMissing,
+        on_missing: FaultAction,
         group_by: &[&str],
     ) -> Window {
         Window::new(
@@ -659,7 +664,7 @@ mod tests {
     }
 
     fn one_group(op: AggregateOp, values: &[f64]) -> f64 {
-        let mut w = win(op, None, OnMissing::Skip, &[]);
+        let mut w = win(op, None, FaultAction::Skip, &[]);
         for &v in values {
             w.on_record(&rec("m", v, &[])).unwrap();
         }
