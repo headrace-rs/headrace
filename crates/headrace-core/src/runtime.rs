@@ -33,38 +33,48 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
         }
     }
     for o in &p.transforms {
-        if let Transform::Window {
-            id,
-            size,
-            slide,
-            allowed_lateness,
-            idle_timeout,
-            ..
-        } = o
-        {
-            let size = parse_duration(id, size)?;
-            if let Some(lateness) = allowed_lateness {
-                parse_duration(id, lateness)?;
-            }
-            if let Some(timeout) = idle_timeout {
-                parse_duration(id, timeout)?;
-            }
-            if let Some(slide) = slide {
-                let slide = parse_duration(id, slide)?;
-                if slide.is_zero() {
-                    return Err(ValidationError::InvalidWindow {
-                        node: id.to_string(),
-                        reason: "slide must be greater than zero".to_string(),
-                    });
+        match o {
+            Transform::Window {
+                id,
+                size,
+                slide,
+                allowed_lateness,
+                idle_timeout,
+                ..
+            } => {
+                let size = parse_duration(id, size)?;
+                if let Some(lateness) = allowed_lateness {
+                    parse_duration(id, lateness)?;
                 }
-                if slide > size {
-                    return Err(ValidationError::InvalidWindow {
-                        node: id.to_string(),
-                        reason: "slide is longer than size; records would fall between windows"
-                            .to_string(),
-                    });
+                if let Some(timeout) = idle_timeout {
+                    parse_duration(id, timeout)?;
+                }
+                if let Some(slide) = slide {
+                    let slide = parse_duration(id, slide)?;
+                    if slide.is_zero() {
+                        return Err(ValidationError::InvalidWindow {
+                            node: id.to_string(),
+                            reason: "slide must be greater than zero".to_string(),
+                        });
+                    }
+                    if slide > size {
+                        return Err(ValidationError::InvalidWindow {
+                            node: id.to_string(),
+                            reason: "slide is longer than size; records would fall between windows"
+                                .to_string(),
+                        });
+                    }
                 }
             }
+            Transform::Map { id, value, .. } => {
+                crate::transform::expr::Expr::parse(value).map_err(|e| {
+                    ValidationError::BadExpression {
+                        node: id.to_string(),
+                        reason: e.0,
+                    }
+                })?;
+            }
+            _ => {}
         }
     }
 
@@ -233,6 +243,7 @@ fn transform_kind(o: &Transform) -> NodeKind {
     match o {
         Transform::Filter { .. } => NodeKind::Filter,
         Transform::Window { .. } => NodeKind::Window,
+        Transform::Map { .. } => NodeKind::Map,
         // Forward-compat: an unknown transform fails in `transform::run`; kind is cosmetic.
         _ => NodeKind::Filter,
     }
@@ -385,6 +396,21 @@ mod tests {
         assert!(matches!(
             validate(&p),
             Err(ValidationError::InvalidWindow { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_bad_map_expression() {
+        let p = pipeline(
+            r#"
+            sources: [{ type: generator, id: gen, interval: 1s }]
+            transforms: [{ type: map, id: m, input: gen, value: "1 +" }]
+            sinks: [{ type: stdout, id: out, input: m }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&p),
+            Err(ValidationError::BadExpression { .. })
         ));
     }
 

@@ -109,6 +109,26 @@ fn window_options_parse_and_default() {
 }
 
 #[test]
+fn parses_map_expression() {
+    let p: Pipeline = serde_yaml::from_str(
+        r#"
+        sources: [{ type: generator, id: g }]
+        transforms: [{ type: map, id: m, input: g, value: "errors / total" }]
+        sinks: [{ type: stdout, id: o, input: m }]
+        "#,
+    )
+    .unwrap();
+    let Transform::Map {
+        value, on_missing, ..
+    } = &p.transforms[0]
+    else {
+        panic!("expected map");
+    };
+    assert_eq!(value, "errors / total");
+    assert_eq!(*on_missing, OnMissing::Skip); // defaulted
+}
+
+#[test]
 fn pipeline_roundtrips_through_json() {
     let p: Pipeline = serde_yaml::from_str(EXAMPLE).unwrap();
     let json = serde_json::to_string(&p).unwrap();
@@ -125,6 +145,7 @@ fn schema_advertises_the_node_catalog() {
         "generator",
         "otlp",
         "window",
+        "map",
         "slide",
         "allowed_lateness",
         "on_missing",

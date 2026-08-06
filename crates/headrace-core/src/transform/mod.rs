@@ -4,7 +4,9 @@
 //! exposes a `run` that reads its input `Consumer` and writes to its output `Producer`;
 //! [`run`] here dispatches by IR node type.
 
+pub(crate) mod expr;
 mod filter;
+mod map;
 mod window;
 
 pub use window::Window;
@@ -42,6 +44,9 @@ pub async fn run(
             };
             window::run(spec, rx, tx, nm).await
         }
+        Transform::Map {
+            value, on_missing, ..
+        } => map::run(value, on_missing, rx, tx, nm).await,
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
     }

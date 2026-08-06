@@ -77,6 +77,18 @@ pub enum Transform {
         group_by: Vec<String>,
         aggregate: Aggregate,
     },
+    /// Rewrite each record's `value` from a closed numeric expression over `value` and
+    /// numeric attributes, e.g. `errors / total` or `value / 1000`.
+    Map {
+        id: String,
+        input: String,
+        /// The expression, evaluated per record and assigned to `value`.
+        value: String,
+        /// What to do when the expression hits a missing/non-numeric field or a
+        /// non-finite result.
+        #[serde(default)]
+        on_missing: OnMissing,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -148,12 +160,16 @@ impl Source {
 impl Transform {
     pub fn id(&self) -> &str {
         match self {
-            Transform::Filter { id, .. } | Transform::Window { id, .. } => id,
+            Transform::Filter { id, .. }
+            | Transform::Window { id, .. }
+            | Transform::Map { id, .. } => id,
         }
     }
     pub fn input(&self) -> &str {
         match self {
-            Transform::Filter { input, .. } | Transform::Window { input, .. } => input,
+            Transform::Filter { input, .. }
+            | Transform::Window { input, .. }
+            | Transform::Map { input, .. } => input,
         }
     }
 }
