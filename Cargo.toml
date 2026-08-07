@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/headrace-ir", "crates/headrace-core", "crates/headrace"]
+members = [
+    "crates/headrace-ir",
+    "crates/headrace-core",
+    "crates/headrace",
+    "crates/headrace-proto",
+    "crates/headrace-proto-gen",
+]
 
 [workspace.package]
 version = "0.1.9"
@@ -11,6 +17,7 @@ repository = "https://github.com/headrace-rs/headrace"
 [workspace.dependencies]
 headrace-ir = { path = "crates/headrace-ir" }
 headrace-core = { path = "crates/headrace-core" }
+headrace-proto = { path = "crates/headrace-proto" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -31,4 +38,8 @@ opentelemetry-otlp = { version = "0.32", features = ["metrics", "grpc-tonic"] }
 opentelemetry-stdout = { version = "0.32", features = ["metrics"] }
 opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "metrics"] }
 tonic = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+tonic-reflection = "0.14"
+prost = "0.14"
 proptest = "1"

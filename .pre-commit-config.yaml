@@ -26,6 +26,8 @@ repos:
         entry: rustfmt --edition 2024
         language: system
         types: [rust]
+        # Generated gRPC stubs are formatted by prost-build, not our rustfmt; leave them.
+        exclude: ^crates/headrace-proto/src/gen/
         stages: [pre-commit]
 
       - id: cargo-clippy

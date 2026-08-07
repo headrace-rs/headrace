@@ -1,0 +1,12 @@
+[package]
+name = "headrace-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Checked-in gRPC stubs for Headrace admin services; regenerate with headrace-proto-gen."
+
+[dependencies]
+tonic.workspace = true
+tonic-prost.workspace = true
+prost.workspace = true
