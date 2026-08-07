@@ -1,0 +1,34 @@
+# Cross-series arithmetic: reduce two synthetic series per service over aligned 5s
+# windows, then join them into `spread = hi - lo`. Shows window -> window -> join.
+#
+#   cargo run -p headrace -- run examples/cross_series.yaml
+#
+# Both windows share size (5s) and group_by (service.name), so their epoch-aligned
+# windows line up and the join can match them per service.
+version: 0
+
+sources:
+  - { type: generator, id: gen_hi, interval: 200ms }
+  - { type: generator, id: gen_lo, interval: 200ms }
+
+transforms:
+  - type: window
+    id: hi
+    input: gen_hi
+    size: 5s
+    group_by: [service.name]
+    aggregate: { op: max, field: value }
+  - type: window
+    id: lo
+    input: gen_lo
+    size: 5s
+    group_by: [service.name]
+    aggregate: { op: min, field: value }
+  - type: join
+    id: spread
+    inputs: [hi, lo]
+    name: latency.spread
+    value: "hi - lo"
+
+sinks:
+  - { type: stdout, id: out, input: spread, format: text }
