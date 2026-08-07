@@ -1,3 +1,12 @@
+## 0.1.10 (2026-08-07)
+
+### Features
+
+- snapshot window state on demand
+- serve window state over gRPC
+- add the inspect client subcommand
+- add hand-rolled landing page
+
 ## 0.1.9 (2026-08-07)
 
 ### Features
