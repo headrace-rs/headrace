@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Headrace — OTel-native, stateful stream processing</title>
+  <meta name="description" content="OTel-native, stateful stream processing in a single Rust binary. Point OTLP at it, define aggregations declaratively, emit to any backend." />
+  <link rel="icon" href="/favicon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script>
+    // Apply saved / URL-forced theme before paint (no flash). Defaults to system.
+    (function () {
+      var p = new URLSearchParams(location.search).get("theme");
+      var t = p || localStorage.getItem("hr-theme");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="/" aria-label="Headrace home">
+      <img class="t-light" src="/logo-wordmark.svg" alt="Headrace" height="26" />
+      <img class="t-dark" src="/logo-wordmark-dark.svg" alt="Headrace" height="26" />
+    </a>
+    <div class="nav-right">
+      <a href="/docs">Docs</a>
+      <a href="https://github.com/headrace-rs/headrace">GitHub</a>
+      <button class="theme-toggle" aria-label="Toggle theme" title="Toggle theme">◐</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow">OTel-native pre-aggregation</span>
+      <h1>Pre-aggregate telemetry. <span class="accent">Ship less</span> to your vendor.</h1>
+      <p class="sub">
+        Run stateful, event-time aggregations over OpenTelemetry and send windowed rollups
+        downstream instead of the raw firehose. One Rust binary: in-process at the edge, or
+        scaled across your cluster over a partitioned backend.
+      </p>
+      <div class="cta-row">
+        <a class="btn" href="/docs">Get started →</a>
+        <a class="btn-ghost" href="https://github.com/headrace-rs/headrace">View on GitHub</a>
+      </div>
+    </section>
+
+    <section class="diagram">
+      <img class="t-light" src="/pipeline.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
+      <img class="t-dark" src="/pipeline-dark.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
+    </section>
+
+    <section class="features">
+      <div class="feat">
+        <h3>Ship less downstream</h3>
+        <p>Emit windowed rollups instead of every datapoint. Your observability bill tracks signal, not raw volume.</p>
+      </div>
+      <div class="feat">
+        <h3>Event-time windows</h3>
+        <p>Watermarks, <code>allowed_lateness</code>, tumbling and sliding. Correct under late and out-of-order data.</p>
+      </div>
+      <div class="feat">
+        <h3>Edge or cloud, one binary</h3>
+        <p>Run in-process for dev and the edge, or scale it across a cluster over a partitioned backend. OTLP in and out, either way.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Apache-2.0 · built in Rust</span>
+    <nav class="fl">
+      <a href="/docs">Docs</a>
+      <a href="https://github.com/headrace-rs/headrace">GitHub</a>
+      <a href="https://crates.io/crates/headrace">crates.io</a>
+    </nav>
+  </footer>
+
+  <script>
+    document.querySelector(".theme-toggle").addEventListener("click", function () {
+      var root = document.documentElement;
+      var cur = root.getAttribute("data-theme")
+        || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      var next = cur === "dark" ? "light" : "dark";
+      localStorage.setItem("hr-theme", next);
+      root.setAttribute("data-theme", next);
+    });
+  </script>
+</body>
+</html>
