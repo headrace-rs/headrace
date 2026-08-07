@@ -53,6 +53,14 @@ enum Cmd {
     Validate { file: PathBuf },
     /// Print the IR JSON Schema.
     Schema,
+    /// Query a running pipeline's live state (needs `run --inspect-addr`).
+    Inspect {
+        /// Address of the pipeline's state server (e.g. 127.0.0.1:4318).
+        addr: SocketAddr,
+        /// Restrict to these node ids (repeatable); omit for all stateful nodes.
+        #[arg(long = "node", value_name = "ID")]
+        node: Vec<String>,
+    },
 }
 
 #[tokio::main]
@@ -86,7 +94,66 @@ async fn main() -> Result<()> {
             println!("{}", headrace_ir::json_schema());
             Ok(())
         }
+        Cmd::Inspect { addr, node } => inspect(addr, node).await,
     }
+}
+
+/// Query the `State` server at `addr` and print each node's open groups. `node` restricts
+/// the query; empty asks for all stateful nodes.
+async fn inspect(addr: SocketAddr, node: Vec<String>) -> Result<()> {
+    use headrace_proto::v1::GetRequest;
+    use headrace_proto::v1::state_client::StateClient;
+
+    let mut client = StateClient::connect(format!("http://{addr}"))
+        .await
+        .with_context(|| format!("connecting to the state server at {addr}"))?;
+    let resp = client
+        .get(GetRequest { node })
+        .await
+        .context("State.Get request failed")?;
+    print!("{}", render(&resp.into_inner().nodes));
+    Ok(())
+}
+
+/// Render `State.Get` results as a plain, greppable table.
+fn render(nodes: &[headrace_proto::v1::NodeState]) -> String {
+    use std::fmt::Write;
+
+    if nodes.is_empty() {
+        return "no stateful nodes\n".to_string();
+    }
+    let mut out = String::new();
+    for n in nodes {
+        let _ = writeln!(out, "{} ({}) - {} group(s)", n.id, n.kind, n.groups.len());
+        for g in &n.groups {
+            let labels = join_pairs(g.labels.iter().map(|(k, v)| format!("{k}={v}")));
+            let _ = write!(
+                out,
+                "  {labels}  window=[{},{})",
+                g.window_start_nanos, g.window_end_nanos
+            );
+            if let Some(v) = g.value {
+                let _ = write!(out, "  value={v}");
+            }
+            if !g.inputs.is_empty() {
+                let inputs = join_pairs(g.inputs.iter().map(|(k, v)| format!("{k}={v}")));
+                let _ = write!(out, "  inputs={{{inputs}}}");
+            }
+            let _ = writeln!(out, "  samples={}", g.samples);
+        }
+    }
+    out
+}
+
+/// Sort `k=v` pairs for stable output (proto maps are unordered) and join them, or `-` when
+/// there are none.
+fn join_pairs(pairs: impl Iterator<Item = String>) -> String {
+    let mut pairs: Vec<String> = pairs.collect();
+    if pairs.is_empty() {
+        return "-".to_string();
+    }
+    pairs.sort();
+    pairs.join(",")
 }
 
 /// Initialize logging to a non-blocking stderr writer. Returns the writer's guard, which must
@@ -108,4 +175,66 @@ fn init_tracing(filter: &str, format: LogFormat) -> tracing_appender::non_blocki
 fn load(file: &PathBuf) -> Result<Pipeline> {
     let text = std::fs::read_to_string(file).with_context(|| format!("reading {file:?}"))?;
     serde_yaml::from_str(&text).with_context(|| format!("parsing {file:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use headrace_proto::v1::{GroupState, NodeState};
+
+    fn group(labels: &[(&str, &str)], value: Option<f64>, samples: u64) -> GroupState {
+        GroupState {
+            labels: labels
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            window_start_nanos: 0,
+            window_end_nanos: 5_000_000_000,
+            value,
+            inputs: Default::default(),
+            samples,
+        }
+    }
+
+    #[test]
+    fn render_lists_window_groups() {
+        let n = NodeState {
+            id: "w".into(),
+            kind: "window".into(),
+            groups: vec![group(&[("service.name", "cart")], Some(42.0), 42)],
+        };
+        let out = render(std::slice::from_ref(&n));
+        assert!(out.contains("w (window) - 1 group(s)"));
+        assert!(out.contains("service.name=cart"));
+        assert!(out.contains("window=[0,5000000000)"));
+        assert!(out.contains("value=42"));
+        assert!(out.contains("samples=42"));
+    }
+
+    #[test]
+    fn render_shows_join_inputs_and_sorts_pairs() {
+        let mut g = group(&[], None, 0);
+        g.inputs = [("b".to_string(), 2.0), ("a".to_string(), 1.0)]
+            .into_iter()
+            .collect();
+        let n = NodeState {
+            id: "j".into(),
+            kind: "join".into(),
+            groups: vec![g],
+        };
+        let out = render(std::slice::from_ref(&n));
+        assert!(
+            out.contains("inputs={a=1,b=2}"),
+            "pairs sorted, no value: {out}"
+        );
+        assert!(
+            !out.contains("value="),
+            "a join bucket has no computed value"
+        );
+    }
+
+    #[test]
+    fn render_handles_no_nodes() {
+        assert_eq!(render(&[]), "no stateful nodes\n");
+    }
 }
