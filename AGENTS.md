@@ -5,7 +5,7 @@ Guidance for AI coding agents in this repo. Human contributors: see [CONTRIBUTIN
 ## Workflow
 
 - Clarify the design before implementing. For anything non-trivial, agree on the approach first
-  and diagram it; prefer a short design note or an [ADR](./docs/adr/) over jumping to code.
+  and diagram it; prefer a short design note or an [ADR](./adr/) over jumping to code.
 - One unit of change per commit. Never mix unrelated changes. Present the change for review
   before committing.
 - Every change ships with tests. Run local CI before calling it done, and do not claim it passes
@@ -74,6 +74,6 @@ cargo test --workspace --all-features
 
 ## Architecture
 
-- Record architectural decisions as [ADRs](./docs/adr/); propose one before changing the
+- Record architectural decisions as [ADRs](./adr/); propose one before changing the
   architecture.
 - The system design lives in [DESIGN.md](./DESIGN.md); keep it in sync.

@@ -68,5 +68,5 @@ spell checking.
 ## Design and architecture
 
 The system design lives in [DESIGN.md](./DESIGN.md). Significant architectural choices are
-recorded as [ADRs](./docs/adr/); propose one before a change that alters the architecture.
+recorded as [ADRs](./adr/); propose one before a change that alters the architecture.
 Use [mermaid](https://mermaid.js.org/) for diagrams (GitHub renders it).

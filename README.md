@@ -39,10 +39,10 @@ cargo run -p headrace -- --metrics otlp run examples/latency.yaml   # export hea
 | Backend | in-process (single binary) | NATS JetStream (partitioned, scaled) |
 | Deploy | Helm chart, OTLP `Record` cumulative-to-delta normalization | `Pipeline` CRD + operator |
 
-Windows are event-time with watermarks, `allowed_lateness`, and `idle_timeout` - see
-[docs/windowing.md](./docs/windowing.md). The `map` transform's numeric expression
-language is documented in [docs/map.md](./docs/map.md), and cross-series `join` in
-[docs/join.md](./docs/join.md).
+Windows are event-time with watermarks, `allowed_lateness`, and `idle_timeout` - see the
+[window](./docs/src/pages/transforms/window.md) guide. The `map` transform's numeric
+expression language is documented in [map](./docs/src/pages/transforms/map.md), and
+cross-series `join` in [docs/join.md](./docs/join.md).
 
 ## Self-metrics
 

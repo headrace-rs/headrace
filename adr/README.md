@@ -25,4 +25,5 @@ Significant architectural decisions are recorded here as ADRs, using the
 - [0010](./0010-cross-series-arithmetic.md) - Cross-series arithmetic
 - [0011](./0011-relabel-and-enrich-records.md) - Relabel and enrich records (proposed)
 - [0012](./0012-join-transform.md) - Join transform: align N series, optionally reduce
-- [0013](./0013-documentation-site.md) - Documentation site: Vocs (proposed)
+- [0013](./0013-documentation-site.md) - Web presence: landing and Vocs docs
+- [0014](./0014-local-state-inspection.md) - Local state inspection over gRPC
