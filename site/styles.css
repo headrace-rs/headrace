@@ -95,12 +95,7 @@ a { color: inherit; text-decoration: none; }
 .foot a:hover { color: var(--ink); }
 .foot .fl { display: flex; gap: 22px; flex-wrap: wrap; }
 
-/* theme-aware images: follow both the OS scheme and the toggle */
-.t-dark { display: none; }
-@media (prefers-color-scheme: dark) { .t-light { display: none; } .t-dark { display: block; } }
-:root[data-theme="light"] .t-light { display: block; }
-:root[data-theme="light"] .t-dark { display: none; }
-:root[data-theme="dark"] .t-light { display: none; }
-:root[data-theme="dark"] .t-dark { display: block; }
+/* theme-aware image rules live inline in <head> (critical CSS) so the off-theme variant
+   is hidden even before this stylesheet loads - see index.html. */
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto; } }

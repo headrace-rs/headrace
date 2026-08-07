@@ -15,6 +15,16 @@
       if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
     })();
   </script>
+  <style>
+    /* Critical: pick the theme image before the external stylesheet loads, so exactly one
+       logo/diagram ever paints - and it still holds if styles.css is slow or missing. */
+    .t-dark { display: none; }
+    @media (prefers-color-scheme: dark) { .t-light { display: none; } .t-dark { display: block; } }
+    :root[data-theme="light"] .t-light { display: block; }
+    :root[data-theme="light"] .t-dark { display: none; }
+    :root[data-theme="dark"] .t-light { display: none; }
+    :root[data-theme="dark"] .t-dark { display: block; }
+  </style>
 </head>
 <body>
   <header class="nav">
