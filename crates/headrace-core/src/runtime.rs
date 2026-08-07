@@ -74,6 +74,18 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
                     }
                 })?;
             }
+            Transform::Join {
+                id,
+                value: Some(value),
+                ..
+            } => {
+                crate::transform::expr::Expr::parse(value).map_err(|e| {
+                    ValidationError::BadExpression {
+                        node: id.to_string(),
+                        reason: e.0,
+                    }
+                })?;
+            }
             _ => {}
         }
     }
@@ -419,29 +431,6 @@ mod tests {
         "#,
         );
         assert!(validate(&p).is_ok());
-    }
-
-    #[tokio::test]
-    async fn join_is_not_yet_runnable() {
-        // Join validates and wires, but execution is a follow-up: running one fails fast.
-        // Also exercises the multi-consumer wiring in `run`.
-        let p = pipeline(
-            r#"
-            sources:
-              - { type: generator, id: s1, interval: 5ms }
-              - { type: generator, id: s2, interval: 5ms }
-            transforms:
-              - { type: window, id: w1, input: s1, size: 1h, aggregate: { op: count } }
-              - { type: window, id: w2, input: s2, size: 1h, aggregate: { op: count } }
-              - { type: join, id: j, inputs: [w1, w2], value: "w1 + w2" }
-            sinks: [{ type: stdout, id: out, input: j }]
-        "#,
-        );
-        let m: SharedMetrics = Arc::new(crate::NoopMetrics);
-        let err = run(p, InProcess::default(), m)
-            .await
-            .expect_err("join is not runnable yet");
-        assert!(err.to_string().contains("not yet implemented"));
     }
 
     #[test]

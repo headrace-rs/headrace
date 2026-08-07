@@ -6,6 +6,7 @@
 
 pub(crate) mod expr;
 mod filter;
+mod join;
 mod map;
 mod window;
 
@@ -54,7 +55,12 @@ pub async fn run(
             on_invalid,
             ..
         } => map::run(value, on_missing, on_invalid, name, one(rxs), tx, nm).await,
-        Transform::Join { .. } => bail!("join is not yet implemented"),
+        Transform::Join {
+            id,
+            inputs,
+            name,
+            value,
+        } => join::run(id, inputs, name, value, rxs, tx, nm).await,
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
     }
