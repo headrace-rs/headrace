@@ -75,6 +75,7 @@ fn agg_over(op: AggregateOp, vs: &[f64]) -> Option<f64> {
             on_missing: FaultAction::Skip,
             on_invalid: FaultAction::Skip,
         },
+        None,
     );
     for &v in vs {
         w.on_record(&rec(v)).unwrap();

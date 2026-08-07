@@ -8,6 +8,7 @@ transforms:
   - type: map
     id: error_rate
     input: joined
+    name: "error.rate"        # rename the emitted metric (optional)
     value: "errors / total"   # the expression, assigned to `value`
     on_missing: skip          # absent field:              skip | error (default skip)
     on_invalid: error         # non-numeric or non-finite: skip | error (default skip)

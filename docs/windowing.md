@@ -82,6 +82,7 @@ transforms:
   - type: window
     id: rollup
     input: in
+    name: "req.latency.avg" # rename the emitted metric (optional)
     size: 5s               # tumbling window length (required)
     allowed_lateness: 2s   # event-time grace before firing (optional, default 0s)
     idle_timeout: 30s      # flush open windows after this quiet (optional, default off)

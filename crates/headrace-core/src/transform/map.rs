@@ -15,6 +15,7 @@ pub(super) async fn run(
     expr: String,
     on_missing: FaultAction,
     on_invalid: FaultAction,
+    name: Option<String>,
     mut rx: Box<dyn Consumer>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
@@ -28,6 +29,9 @@ pub(super) async fn run(
         let policy = match expr.eval(&rec) {
             Ok(v) if v.is_finite() => {
                 rec.value = v;
+                if let Some(name) = &name {
+                    rec.name = name.clone();
+                }
                 if tx.send(None, rec).await.is_err() {
                     break;
                 }
@@ -61,11 +65,27 @@ mod tests {
             "value / 1000",
             FaultAction::Skip,
             FaultAction::Skip,
+            None,
             rec(2000.0),
         )
         .await;
         let got = out.recv().await.expect("mapped record");
         assert_eq!(got.value, 2.0);
+    }
+
+    #[tokio::test]
+    async fn renames_the_output_metric() {
+        let mut out = drive(
+            "value + 1",
+            FaultAction::Skip,
+            FaultAction::Skip,
+            Some("derived".to_string()),
+            rec(1.0),
+        )
+        .await;
+        let got = out.recv().await.expect("mapped record");
+        assert_eq!(got.value, 2.0);
+        assert_eq!(got.name, "derived");
     }
 
     #[tokio::test]
@@ -75,6 +95,7 @@ mod tests {
             "missing * 2",
             FaultAction::Skip,
             FaultAction::Skip,
+            None,
             rec(1.0),
         )
         .await;
@@ -96,6 +117,7 @@ mod tests {
             "value / 0".to_string(),
             FaultAction::Skip,
             FaultAction::Error,
+            None,
             rx,
             tx,
             nm,
@@ -113,6 +135,7 @@ mod tests {
         expr: &str,
         on_missing: FaultAction,
         on_invalid: FaultAction,
+        name: Option<String>,
         rec: Record,
     ) -> Box<dyn Consumer> {
         let mut be = InProcess::new(8);
@@ -123,7 +146,15 @@ mod tests {
         drop(be);
         let metrics: SharedMetrics = Arc::new(NoopMetrics);
         let nm = NodeMetrics::bind(&metrics, "m", NodeKind::Map);
-        tokio::spawn(run(expr.to_string(), on_missing, on_invalid, rx, tx, nm));
+        tokio::spawn(run(
+            expr.to_string(),
+            on_missing,
+            on_invalid,
+            name,
+            rx,
+            tx,
+            nm,
+        ));
         feed.send(None, rec).await.unwrap();
         drop(feed); // close the input so the task drains and exits
         out

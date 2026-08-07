@@ -26,6 +26,7 @@ pub async fn run(
     match t {
         Transform::Filter { key, equals, .. } => filter::run(key, equals, rx, tx, nm).await,
         Transform::Window {
+            name,
             size,
             slide,
             allowed_lateness,
@@ -41,15 +42,17 @@ pub async fn run(
                 idle_timeout,
                 group_by,
                 aggregate,
+                name,
             };
             window::run(spec, rx, tx, nm).await
         }
         Transform::Map {
+            name,
             value,
             on_missing,
             on_invalid,
             ..
-        } => map::run(value, on_missing, on_invalid, rx, tx, nm).await,
+        } => map::run(value, on_missing, on_invalid, name, rx, tx, nm).await,
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
     }

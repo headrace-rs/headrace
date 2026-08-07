@@ -104,6 +104,8 @@ pub struct Window {
     lateness_nanos: u64,
     group_by: Vec<String>,
     aggregate: Aggregate,
+    /// Renames the emitted metric; `None` keeps each group's source name.
+    name: Option<String>,
     /// Open windows keyed by start; each holds its per-group accumulators. Ordered so
     /// the earliest-ready windows fire first.
     windows: BTreeMap<u64, HashMap<GroupKey, Agg>>,
@@ -119,6 +121,7 @@ impl Window {
         lateness_nanos: u64,
         group_by: Vec<String>,
         aggregate: Aggregate,
+        name: Option<String>,
     ) -> Self {
         Self {
             size_nanos,
@@ -126,6 +129,7 @@ impl Window {
             lateness_nanos,
             group_by,
             aggregate,
+            name,
             windows: BTreeMap::new(),
             max_event: 0,
             skipped: 0,
@@ -236,6 +240,7 @@ impl Window {
     fn drain_windows(&mut self, ready: impl Fn(u64) -> bool) -> Vec<Record> {
         let op = self.aggregate.op;
         let size = self.size_nanos;
+        let name = self.name.clone();
         let starts: Vec<u64> = self
             .windows
             .keys()
@@ -253,7 +258,7 @@ impl Window {
                     start_ts_nanos: Some(start),
                     resource: Attrs::new(),
                     scope: None,
-                    name: a.name,
+                    name: name.clone().unwrap_or(a.name),
                     value,
                     attrs: a.attrs,
                 });
@@ -284,6 +289,7 @@ pub(super) struct Spec {
     pub idle_timeout: Option<String>,
     pub group_by: Vec<String>,
     pub aggregate: Aggregate,
+    pub name: Option<String>,
 }
 
 /// Drive the window in event time: fold records, firing each window when the watermark
@@ -303,6 +309,7 @@ pub(super) async fn run(
         idle_timeout,
         group_by,
         aggregate,
+        name,
     } = spec;
     let size_nanos = humantime::parse_duration(&size)?.as_nanos() as u64;
     let slide_nanos = match &slide {
@@ -317,7 +324,14 @@ pub(super) async fn run(
         Some(t) => Some(humantime::parse_duration(t)?),
         None => None,
     };
-    let mut win = Window::new(size_nanos, slide_nanos, lateness_nanos, group_by, aggregate);
+    let mut win = Window::new(
+        size_nanos,
+        slide_nanos,
+        lateness_nanos,
+        group_by,
+        aggregate,
+        name,
+    );
 
     loop {
         tokio::select! {
@@ -486,7 +500,7 @@ mod tests {
             on_missing: FaultAction::Skip,
             on_invalid: FaultAction::Error,
         };
-        let mut w = Window::new(SIZE, SIZE, 0, vec![], aggregate);
+        let mut w = Window::new(SIZE, SIZE, 0, vec![], aggregate, None);
         w.on_record(&rec("m", 0.0, &[])).unwrap(); // "lat" absent -> skipped
         assert!(
             w.on_record(&rec("m", 0.0, &[("lat", AttrValue::Str("x".into()))]))
@@ -554,6 +568,7 @@ mod tests {
             500,
             vec![],
             agg(AggregateOp::Count, None, FaultAction::Skip),
+            None,
         );
         w.on_record(&rec_at("m", 1.0, 100)).unwrap(); // [0, SIZE)
         w.on_record(&rec_at("m", 1.0, 200)).unwrap(); // [0, SIZE)
@@ -570,6 +585,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn name_override_renames_the_output() {
+        let mut w = Window::new(
+            SIZE,
+            SIZE,
+            0,
+            vec![],
+            agg(AggregateOp::Count, None, FaultAction::Skip),
+            Some("renamed".to_string()),
+        );
+        w.on_record(&rec("m", 1.0, &[])).unwrap();
+        assert_eq!(w.drain_all()[0].name, "renamed");
+    }
+
     // --- sliding windows ---
 
     #[test]
@@ -581,6 +610,7 @@ mod tests {
             0,
             vec![],
             agg(AggregateOp::Count, None, FaultAction::Skip),
+            None,
         );
         w.on_record(&rec_at("m", 1.0, 700)).unwrap();
         let mut out = w.drain_all();
@@ -599,6 +629,7 @@ mod tests {
             0,
             vec![],
             agg(AggregateOp::Count, None, FaultAction::Skip),
+            None,
         );
         w.on_record(&rec_at("m", 1.0, 200)).unwrap(); // [0,1000)
         w.on_record(&rec_at("m", 1.0, 700)).unwrap(); // [0,1000) and [500,1500)
@@ -633,6 +664,7 @@ mod tests {
             0,
             group_by.iter().map(|s| s.to_string()).collect(),
             agg(op, field, on_missing),
+            None,
         )
     }
 

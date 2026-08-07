@@ -56,6 +56,9 @@ pub enum Transform {
     Window {
         id: String,
         input: String,
+        /// Rename the emitted metric; defaults to keeping the input's name.
+        #[serde(default)]
+        name: Option<String>,
         /// Window length.
         size: String,
         /// Step between window starts. Omitted (or equal to `size`) makes the windows
@@ -82,6 +85,9 @@ pub enum Transform {
     Map {
         id: String,
         input: String,
+        /// Rename the emitted metric; defaults to keeping the input's name.
+        #[serde(default)]
+        name: Option<String>,
         /// The expression, evaluated per record and assigned to `value`.
         value: String,
         /// What to do when the expression references an absent field.
