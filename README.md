@@ -12,6 +12,11 @@ OTel-native, stateful stream processing in a single Rust binary. Point telemetry
 define aggregations declaratively, emit to any backend. Runs in-process for dev/edge or
 scales on Kubernetes over a partitioned backend.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/pipeline-dark.svg">
+  <img src="./docs/assets/pipeline.svg" alt="headrace pipeline: sources through stateful transforms to sinks" width="100%">
+</picture>
+
 See [DESIGN.md](./DESIGN.md).
 
 ## Try it
