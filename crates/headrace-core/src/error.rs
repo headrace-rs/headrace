@@ -22,4 +22,6 @@ pub enum ValidationError {
     InvalidWindow { node: String, reason: String },
     #[error("map `{node}` has an invalid expression: {reason}")]
     BadExpression { node: String, reason: String },
+    #[error("join `{node}`: {reason}")]
+    InvalidJoin { node: String, reason: String },
 }

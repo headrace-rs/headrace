@@ -103,6 +103,62 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
 
     // 4. Every transform is reachable from a source - rejects cycles and orphans.
     check_reachable(p)?;
+
+    // 5. Join inputs are aligned windows; an align-only join feeds a transform.
+    check_joins(p)?;
+    Ok(())
+}
+
+/// Join inputs must be windows sharing a `group_by` and window size (so their
+/// epoch-aligned bounds coincide), and an align-only join (no `value`) must feed a
+/// transform, not a sink (its records carry no computed value).
+fn check_joins(p: &Pipeline) -> Result<(), ValidationError> {
+    let windows: HashMap<&str, (&[String], &str)> = p
+        .transforms
+        .iter()
+        .filter_map(|o| match o {
+            Transform::Window {
+                id, size, group_by, ..
+            } => Some((id.as_str(), (group_by.as_slice(), size.as_str()))),
+            _ => None,
+        })
+        .collect();
+    for o in &p.transforms {
+        let Transform::Join { id, inputs, .. } = o else {
+            continue;
+        };
+        let mut spec: Option<(&[String], &str)> = None;
+        for input in inputs {
+            let s = *windows
+                .get(input.as_str())
+                .ok_or_else(|| ValidationError::InvalidJoin {
+                    node: id.clone(),
+                    reason: format!("input `{input}` must be a window"),
+                })?;
+            match spec {
+                None => spec = Some(s),
+                Some(prev) if prev != s => {
+                    return Err(ValidationError::InvalidJoin {
+                        node: id.clone(),
+                        reason: "inputs must share group_by and window size".to_string(),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    for s in &p.sinks {
+        if let Some(Transform::Join {
+            id, value: None, ..
+        }) = p.transforms.iter().find(|o| o.id() == s.input())
+        {
+            return Err(ValidationError::InvalidJoin {
+                node: id.clone(),
+                reason: "an align-only join (no `value`) must feed a transform, not a sink"
+                    .to_string(),
+            });
+        }
+    }
     Ok(())
 }
 
@@ -447,6 +503,70 @@ mod tests {
         assert!(matches!(
             validate(&p),
             Err(ValidationError::UnknownInput(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_join_over_a_non_window() {
+        // A map output is not an aligned window, so it cannot be a join input.
+        let p = pipeline(
+            r#"
+            sources:
+              - { type: generator, id: s1, interval: 1s }
+              - { type: generator, id: s2, interval: 1s }
+            transforms:
+              - { type: window, id: w1, input: s1, size: 5s, aggregate: { op: count } }
+              - { type: window, id: w2, input: s2, size: 5s, aggregate: { op: count } }
+              - { type: map, id: m, input: w2, value: "value * 2" }
+              - { type: join, id: j, inputs: [w1, m], value: "w1 + m" }
+            sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&p),
+            Err(ValidationError::InvalidJoin { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_join_over_mismatched_windows() {
+        let p = pipeline(
+            r#"
+            sources:
+              - { type: generator, id: s1, interval: 1s }
+              - { type: generator, id: s2, interval: 1s }
+            transforms:
+              - { type: window, id: w1, input: s1, size: 5s, aggregate: { op: count } }
+              - { type: window, id: w2, input: s2, size: 10s, aggregate: { op: count } }
+              - { type: join, id: j, inputs: [w1, w2], value: "w1 + w2" }
+            sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&p),
+            Err(ValidationError::InvalidJoin { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_align_only_join_into_a_sink() {
+        // No `value`, so the join carries per-input values but no computed value; a sink
+        // needs one, so this must fail.
+        let p = pipeline(
+            r#"
+            sources:
+              - { type: generator, id: s1, interval: 1s }
+              - { type: generator, id: s2, interval: 1s }
+            transforms:
+              - { type: window, id: w1, input: s1, size: 5s, aggregate: { op: count } }
+              - { type: window, id: w2, input: s2, size: 5s, aggregate: { op: count } }
+              - { type: join, id: j, inputs: [w1, w2] }
+            sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&p),
+            Err(ValidationError::InvalidJoin { .. })
         ));
     }
 
