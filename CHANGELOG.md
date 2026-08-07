@@ -1,3 +1,11 @@
+## 0.1.9 (2026-08-07)
+
+### Features
+
+- add multi-input plumbing for join
+- implement the join core
+- validate inputs at build time
+
 ## 0.1.8 (2026-08-07)
 
 ### Features
