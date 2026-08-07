@@ -39,6 +39,8 @@ button[data-single-line="true"][class]{top:.625rem!important;translate:none!impo
     ],
   },
   topNav: [
+    // Absolute URL so it escapes basePath and returns to the landing root.
+    { text: 'Home', link: 'https://headrace.rs' },
     { text: 'Getting started', link: '/getting-started' },
     { text: 'GitHub', link: 'https://github.com/headrace-rs/headrace' },
   ],
@@ -49,9 +51,9 @@ button[data-single-line="true"][class]{top:.625rem!important;translate:none!impo
       text: 'Transforms',
       collapsed: false,
       items: [
-        { text: 'filter', link: '/transforms/filter' },
-        { text: 'map', link: '/transforms/map' },
-        { text: 'window', link: '/transforms/window' },
+        { text: 'Filter', link: '/transforms/filter' },
+        { text: 'Map', link: '/transforms/map' },
+        { text: 'Window', link: '/transforms/window' },
       ],
     },
   ],
