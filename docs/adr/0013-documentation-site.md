@@ -1,79 +1,69 @@
-# 0013. Documentation site: Vocs
+# 0013. Web presence: hand-rolled landing, Vocs docs, Cloudflare Pages
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-07
 
 ## Context
 
-The prose docs are good but scattered with no navigable home: `README.md`, `DESIGN.md`, the
-per-transform guides (`docs/windowing.md`, `docs/map.md`), 12 ADRs, and per-crate READMEs. A docs
-site is a v0.4 roadmap item (`DESIGN.md#roadmap`). Forces on the choice:
+The prose docs were good but scattered with no navigable home: `README.md`, `DESIGN.md`, the
+per-transform guides (`docs/windowing.md`, `docs/map.md`), 12 ADRs, and per-crate READMEs. A
+docs site is a v0.4 roadmap item (`DESIGN.md#roadmap`). Two distinct needs surfaced:
 
-- **Reuse, not rewrite.** The existing markdown should render with minimal churn.
-- **One source of truth.** `DESIGN.md` is the canonical architecture doc and must stay in sync
-  (AGENTS.md); the site must link into it, not fork it.
-- **Mermaid.** `DESIGN.md` carries 7 mermaid diagrams, and AGENTS.md encourages more, so the
-  renderer must handle mermaid.
-- **Brand.** It should carry the teal + H-mark identity (`brand/`) and the pipeline diagram
-  (`docs/assets/pipeline.svg`).
-- **API docs are already solved.** rustdoc -> docs.rs owns the API reference; the site owns
-  concepts, guides, and decisions only.
-- **Deploy.** A static site on a low-cost, Git-integrated host, ideally on a custom domain.
+- **Docs** - navigable, searchable prose with good code rendering. Should reuse the existing
+  markdown, keep `DESIGN.md` canonical (AGENTS.md), and leave rustdoc -> docs.rs as the API
+  reference.
+- **A landing page** - a marketing home that leads with the value (pre-aggregate telemetry,
+  ship less downstream). This is a different craft from docs, and a docs engine makes a poor
+  marketing-page builder.
 
-Options weighed: **mdBook** (Rust-native, zero Node, first-class `mdbook-mermaid`, but plain and no
-MDX/interactivity), **Vocs** (Vite/React/MDX, strong theming and built-in search, MDX leaves room
-for interactive IR/schema docs later, but adds a Node toolchain and needs a mermaid plugin), and
-**Starlight** (Astro; a middle ground). We accept a Node toolchain in exchange for theming that
-matches the brand and headroom for interactive docs.
+Constraint: deploy as a static site to a low-cost, Git-integrated host on a custom domain.
 
 ## Decision
 
-We will build the docs site with **Vocs**.
+**Split the two concerns, serve them from one domain.**
 
-- **Location.** `docs/` becomes the site root, content under `docs/pages/`. `windowing.md`,
-  `map.md`, and `adr/` move under `pages/`; the handful of relative links (README, cross-links,
-  `adr/README.md` index) get a one-time fixup.
-- **Reuse.** The transform guides and the ADRs render as-is with added frontmatter. The landing
-  page reuses the README hero and the pipeline SVG, which stands in for a landing diagram.
-- **Canonical sources stay put.** `DESIGN.md` remains authoritative and renders as one page;
-  Concept pages summarize and link into it rather than copying, so there is a single source of
-  truth. The site links out to docs.rs for the API.
-- **Mermaid** renders via a `rehype-mermaid` plugin (or a small MDX `<Mermaid>` component) so the
-  `DESIGN.md` diagrams work.
-- **Theme.** Accent teal (`#0E9AA0` light, `#2DD4BF` dark), H-mark logo from `brand/assets`,
-  light and dark.
-- **Hosting.** Deploy the static build behind a Git-integrated host with per-PR preview
-  deployments - **Cloudflare Pages** preferred, **Netlify** the fallback if cost or features
-  dictate - on the custom domain **`headrace.rs`** (pending registration; `.rs` also nods to the
-  `headrace-rs` org and to Rust). The host builds on push, so no deploy workflow lives in the repo;
-  an optional CI job runs the Vocs build to catch breakage (Sentence-case names, AGENTS.md).
+- **Docs: Vocs** (Vite/React/MDX, waku-based). Content lives in `docs/src/pages`;
+  `renderStrategy: 'full-static'` prerenders every page to HTML; `basePath: '/docs'` serves it
+  under `/docs`. Brand-themed via CSS-variable overrides (the pipeline-diagram palette). The
+  transform guides render as pages; `DESIGN.md` stays the canonical architecture doc and is
+  linked, not forked. Mermaid, when needed, is a `rehype-mermaid` plugin.
+- **Landing: hand-rolled** static HTML/CSS (+ a few lines of JS) in `site/`, owning the root.
+  It is one page, so no framework earns its keep yet; if it grows to several pages we move it to
+  **Hugo** (familiar, huge community; theme ecosystem is moot since the design is bespoke). The
+  page is brand-themed and light/dark.
+- **Assembly:** `scripts/build-web.sh` builds the docs and assembles `dist/` - landing at `/`,
+  `docs/dist/public` at `/docs`.
+- **Hosting: Cloudflare Pages** on **`headrace.rs`**, deployed from GitHub Actions with
+  `wrangler pages deploy dist` (`.github/workflows/web.yml`); pushes to `main` publish, PRs get
+  `*.pages.dev` previews. Netlify was the fallback; Cloudflare was chosen.
+- **ADRs stay repo-internal** in `docs/adr/` - they are decision records, not site content, so
+  they are not rendered on the site (this reverses the earlier draft that moved them under the
+  site).
 
 ```text
-docs/
-  vocs.config.ts          # accent teal, logo, sidebar
-  package.json
-  assets/pipeline.svg     # existing; landing hero
-  pages/
-    index.mdx             # hero + quickstart + feature grid (from README)
-    getting-started.md
-    concepts/*.md         # links into DESIGN.md
-    transforms/{map,windowing}.md   # moved, reused as-is
-    adr/*.md              # moved, reused as-is
+site/                     # hand-rolled landing (root) - no build
+  index.html  styles.css  *.svg
+docs/                     # Vocs docs (served at /docs)
+  vocs.config.ts          # renderStrategy: full-static, basePath: /docs, brand theme
+  src/pages/
+    index.mdx             # docs overview
+    getting-started.mdx
+    transforms/{filter,map,window}.md
+scripts/build-web.sh      # docs build + assemble -> dist/
+dist/                     # combined output (git-ignored): / = landing, /docs = docs
 ```
 
 ## Consequences
 
-- Introduces a Node/Vite/React toolchain into an otherwise Rust repo: a `package.json` and a
-  lockfile. Editing prose still means editing plain markdown; Node is needed only to preview or
-  build the site.
-- Mermaid is a plugin rather than first-class, the main cost of choosing Vocs over mdBook.
-- Moving `docs/windowing.md`, `docs/map.md`, and `docs/adr/` under `docs/pages/` changes their
-  paths, so README links and the ADR index need a one-time update.
-- Keeping `DESIGN.md` canonical avoids drift but means Concept pages link rather than fully inline
-  the architecture.
-- MDX leaves room for interactive docs later (an IR JSON-Schema explorer, runnable pipeline
-  snippets) without another migration.
-- docs.rs stays the source of truth for API docs; the site never duplicates it.
-- Host and domain are the open items: Cloudflare Pages vs Netlify is a cost call, and `headrace.rs`
-  depends on registration. Both hosts consume the same static build, so the choice is low-risk and
-  reversible, and a different domain changes only DNS.
+- The docs bring a Node/Vite/React toolchain (`docs/package.json` + lockfile) and a CI job; the
+  landing stays zero-build (a folder of files). Editing docs prose is still plain markdown.
+- One domain, one Cloudflare Pages project, one workflow - the combined `dist/` is what ships.
+  Host and domain are swappable: any static host consumes the same `dist/`.
+- `DESIGN.md` stays canonical, so docs Concept pages link into it rather than duplicating it;
+  docs.rs remains the API reference and is never duplicated.
+- The transform guides now exist both as the originals (`docs/windowing.md`, `docs/map.md`) and as
+  migrated pages under `docs/src/pages/transforms/`. That duplication is temporary, to be
+  reconciled (delete the originals, fix the README links) in a follow-up.
+- Hand-rolled means no partials/templating on the landing; the day it needs a second page, the
+  HTML/CSS lifts into Hugo with little change (a working Hugo build of this exact page was
+  prototyped).
