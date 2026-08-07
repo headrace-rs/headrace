@@ -535,7 +535,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-proto"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "prost",
  "tonic",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-proto-gen"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "tonic-prost-build",
 ]
