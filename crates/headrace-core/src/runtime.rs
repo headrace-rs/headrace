@@ -218,16 +218,34 @@ fn check_reachable(p: &Pipeline) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Optional side surfaces layered on the data pipeline.
+#[derive(Default)]
+pub struct RunOptions {
+    /// Address for the state-inspection gRPC server (ADR-0014). `None` (the default) leaves
+    /// it off.
+    #[cfg(feature = "inspect")]
+    pub inspect_addr: Option<std::net::SocketAddr>,
+}
+
 /// Wire the graph onto `backend` and run.
 ///
 /// Runs until a shutdown signal (Ctrl-C / SIGTERM), a node failing or panicking
 /// (fail fast, surfacing the error), or all nodes completing on their own. On a
 /// signal it drains best-effort: sources stop, their dropped senders close the
 /// graph so windows flush and sinks empty; a second signal forces an abort.
-pub async fn run(p: Pipeline, mut backend: impl Backend, metrics: SharedMetrics) -> Result<()> {
+pub async fn run(
+    p: Pipeline,
+    mut backend: impl Backend,
+    metrics: SharedMetrics,
+    opts: RunOptions,
+) -> Result<()> {
+    #[cfg(not(feature = "inspect"))]
+    let _ = opts; // no side surfaces compiled in
     validate(&p)?;
     let mut sources: JoinSet<Result<()>> = JoinSet::new();
     let mut work: JoinSet<Result<()>> = JoinSet::new();
+    #[cfg(feature = "inspect")]
+    let mut registry = crate::inspect::Registry::default();
 
     for s in &p.sources {
         let tx = backend.producer(s.id());
@@ -246,9 +264,18 @@ pub async fn run(p: Pipeline, mut backend: impl Backend, metrics: SharedMetrics)
         let nm = NodeMetrics::bind(&metrics, o.id(), transform_kind(o));
         let node = nm.clone();
         let op = o.clone();
+        // Wire this node for inspection only when the State server is on and it holds
+        // inspectable state; otherwise the node's inspect arm stays dormant.
+        #[cfg(feature = "inspect")]
+        let inspect = if opts.inspect_addr.is_some() && is_inspectable(o) {
+            Some(registry.register(o.id()))
+        } else {
+            None
+        };
+        #[cfg(not(feature = "inspect"))]
+        let inspect: Option<crate::inspect::Inspector> = None;
         work.spawn(async move {
-            // Inspection wiring (the `Some` case) arrives with the State server.
-            let r = transform::run(op, rxs, tx, nm, None).await;
+            let r = transform::run(op, rxs, tx, nm, inspect).await;
             record_error(&r, &node);
             r
         });
@@ -266,6 +293,11 @@ pub async fn run(p: Pipeline, mut backend: impl Backend, metrics: SharedMetrics)
     }
     // Release the backend's retained senders so channel-close propagates on drain.
     drop(backend);
+
+    // The State server runs alongside the pipeline; its guard aborts it when `run` returns,
+    // no matter which path we exit through.
+    #[cfg(feature = "inspect")]
+    let _inspect_server = start_inspect(opts, registry);
 
     tracing::info!(
         sources = p.sources.len(),
@@ -309,6 +341,30 @@ fn propagate(joined: Result<Result<()>, JoinError>) -> Result<()> {
 fn record_error(result: &Result<()>, nm: &NodeMetrics) {
     if result.is_err() {
         nm.error();
+    }
+}
+
+/// Whether a transform holds state the `State` server can snapshot. Window today; join
+/// snapshots are a follow-up (ADR-0014).
+#[cfg(feature = "inspect")]
+fn is_inspectable(o: &Transform) -> bool {
+    matches!(o, Transform::Window { .. })
+}
+
+/// Start the state-inspection server if an address is configured and there is something to
+/// inspect. Returns a guard that stops the server when dropped.
+#[cfg(feature = "inspect")]
+fn start_inspect(
+    opts: RunOptions,
+    registry: crate::inspect::Registry,
+) -> Option<crate::inspect::server::Server> {
+    match opts.inspect_addr {
+        Some(_) if registry.is_empty() => {
+            tracing::warn!("--inspect-addr set but the pipeline has no inspectable nodes");
+            None
+        }
+        Some(addr) => Some(crate::inspect::server::spawn(registry, addr)),
+        None => None,
     }
 }
 
@@ -622,9 +678,14 @@ mod tests {
         "#,
         );
         let metrics = Arc::new(ErrCounts::default());
-        let err = run(p, InProcess::default(), metrics.clone())
-            .await
-            .expect_err("missing field should fail the run");
+        let err = run(
+            p,
+            InProcess::default(),
+            metrics.clone(),
+            RunOptions::default(),
+        )
+        .await
+        .expect_err("missing field should fail the run");
         assert!(err.to_string().contains("missing numeric field"));
         assert!(
             metrics.errors.load(Ordering::Relaxed) >= 1,

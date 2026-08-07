@@ -18,12 +18,16 @@ tracing.workspace = true
 mockall = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
 opentelemetry-proto = { workspace = true, optional = true }
+headrace-proto = { workspace = true, optional = true }
+tonic-reflection = { workspace = true, optional = true }
 
 [features]
 # Exposes automock-generated Backend/Producer/Consumer mocks for downstream tests.
 mocks = ["dep:mockall"]
 # OTLP source (gRPC receiver) and sink (gRPC exporter).
 otlp = ["dep:tonic", "dep:opentelemetry-proto"]
+# State-inspection gRPC server (the `State` service; ADR-0014).
+inspect = ["dep:tonic", "dep:headrace-proto", "dep:tonic-reflection"]
 
 [dev-dependencies]
 serde_yaml.workspace = true

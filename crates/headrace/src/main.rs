@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use headrace_core::backend::InProcess;
 use headrace_ir::Pipeline;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
@@ -41,7 +42,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Run a pipeline until Ctrl-C.
-    Run { file: PathBuf },
+    Run {
+        file: PathBuf,
+        /// Serve the state-inspection gRPC API on this address (e.g. 127.0.0.1:4318).
+        /// Off by default; exposes raw node state, so bind a trusted network only.
+        #[arg(long, value_name = "ADDR")]
+        inspect_addr: Option<SocketAddr>,
+    },
     /// Parse and statically check a pipeline.
     Validate { file: PathBuf },
     /// Print the IR JSON Schema.
@@ -56,14 +63,15 @@ async fn main() -> Result<()> {
     let _guard = init_tracing(&cli.log, cli.log_format);
 
     match cli.cmd {
-        Cmd::Run { file } => {
+        Cmd::Run { file, inspect_addr } => {
             let pipeline = load(&file)?;
             let telemetry = metrics::init(cli.metrics, cli.otlp_endpoint.clone())?;
             let recorder: headrace_core::SharedMetrics = match &telemetry {
                 Some(t) => t.metrics.clone(),
                 None => Arc::new(headrace_core::NoopMetrics),
             };
-            let result = headrace_core::run(pipeline, InProcess::default(), recorder).await;
+            let opts = headrace_core::RunOptions { inspect_addr };
+            let result = headrace_core::run(pipeline, InProcess::default(), recorder, opts).await;
             if let Some(t) = telemetry {
                 t.shutdown();
             }

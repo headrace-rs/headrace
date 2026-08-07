@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 headrace-ir.workspace = true
-headrace-core = { workspace = true, features = ["otlp"] }
+headrace-core = { workspace = true, features = ["otlp", "inspect"] }
 serde_yaml.workspace = true
 anyhow.workspace = true
 tokio.workspace = true

@@ -60,3 +60,52 @@ pub(crate) fn labels_of(attrs: &Attrs) -> BTreeMap<String, String> {
         .map(|(k, v)| (k.clone(), v.to_string()))
         .collect()
 }
+
+/// The `State` gRPC service that serves these snapshots (ADR-0014).
+#[cfg(feature = "inspect")]
+pub mod server;
+
+/// Capacity of a node's inspect channel. Queries are rare and answered immediately from the
+/// node's loop, so a small buffer is plenty.
+#[cfg(feature = "inspect")]
+const QUERY_CAP: usize = 8;
+
+/// Maps each stateful node's id to a [`Handle`] for querying it. The runtime builds one as
+/// it spawns nodes ([`Registry::register`]); the `State` server queries through it.
+#[cfg(feature = "inspect")]
+#[derive(Default, Clone)]
+pub struct Registry {
+    nodes: std::collections::HashMap<String, Handle>,
+}
+
+#[cfg(feature = "inspect")]
+impl Registry {
+    /// Wire node `id` for inspection: retain its [`Handle`] and hand back the [`Inspector`]
+    /// its loop reads.
+    pub fn register(&mut self, id: &str) -> Inspector {
+        let (tx, rx) = mpsc::channel(QUERY_CAP);
+        self.nodes.insert(id.to_string(), tx);
+        rx
+    }
+
+    /// Whether any node is registered.
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    /// The registered node ids, sorted for deterministic responses.
+    pub(crate) fn ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.nodes.keys().cloned().collect();
+        ids.sort();
+        ids
+    }
+
+    /// Ask node `id` for a current snapshot. `None` if it is unregistered or has exited
+    /// (its loop dropped the [`Handle`]).
+    pub(crate) async fn query(&self, id: &str) -> Option<NodeSnapshot> {
+        let handle = self.nodes.get(id)?;
+        let (reply, rx) = oneshot::channel();
+        handle.send(reply).await.ok()?;
+        rx.await.ok()
+    }
+}

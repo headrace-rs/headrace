@@ -13,4 +13,4 @@ pub mod transform;
 pub use error::ValidationError;
 pub use metrics::{Metrics, NodeRecorder, NoopMetrics, SharedMetrics};
 pub use record::{AttrValue, Record};
-pub use runtime::{run, validate};
+pub use runtime::{RunOptions, run, validate};
