@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod error;
+pub mod inspect;
 pub mod metrics;
 #[cfg(feature = "otlp")]
 pub mod otlp;

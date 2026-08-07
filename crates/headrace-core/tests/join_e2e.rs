@@ -37,18 +37,21 @@ async fn window_then_join_reduces_two_series() {
         vec![hi_rx],
         hi_tx,
         NodeMetrics::bind(&m, "hi", NodeKind::Window),
+        None,
     ));
     tokio::spawn(headrace_core::transform::run(
         lo,
         vec![lo_rx],
         lo_tx,
         NodeMetrics::bind(&m, "lo", NodeKind::Window),
+        None,
     ));
     tokio::spawn(headrace_core::transform::run(
         j,
         vec![join_hi, join_lo],
         join_tx,
         NodeMetrics::bind(&m, "j", NodeKind::Join),
+        None,
     ));
 
     let five_s = Duration::from_secs(5).as_nanos() as u64;

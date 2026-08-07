@@ -247,7 +247,8 @@ pub async fn run(p: Pipeline, mut backend: impl Backend, metrics: SharedMetrics)
         let node = nm.clone();
         let op = o.clone();
         work.spawn(async move {
-            let r = transform::run(op, rxs, tx, nm).await;
+            // Inspection wiring (the `Some` case) arrives with the State server.
+            let r = transform::run(op, rxs, tx, nm, None).await;
             record_error(&r, &node);
             r
         });

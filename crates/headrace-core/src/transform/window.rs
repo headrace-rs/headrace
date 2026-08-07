@@ -5,6 +5,7 @@
 //! that owns only I/O.
 
 use crate::backend::{Consumer, Producer};
+use crate::inspect::{GroupSnapshot, Inspector, NodeSnapshot, labels_of, recv_query};
 use crate::metrics::NodeMetrics;
 use crate::record::{AttrValue, Attrs, Fault, Record};
 use anyhow::{Result, bail};
@@ -266,6 +267,31 @@ impl Window {
         }
         out
     }
+
+    /// A read-only view of every open (not-yet-fired) window and group, for state
+    /// inspection (ADR-0014). Reports each group's running aggregate and the number of
+    /// records folded so far; it fires and mutates nothing.
+    pub fn snapshot(&self) -> NodeSnapshot {
+        let op = self.aggregate.op;
+        let mut groups = Vec::new();
+        for (&start, by_key) in &self.windows {
+            let end = start + self.size_nanos;
+            for a in by_key.values() {
+                groups.push(GroupSnapshot {
+                    labels: labels_of(&a.attrs),
+                    start_nanos: start,
+                    end_nanos: end,
+                    value: a.value(op),
+                    inputs: std::collections::BTreeMap::new(),
+                    samples: a.count,
+                });
+            }
+        }
+        NodeSnapshot {
+            kind: "window",
+            groups,
+        }
+    }
 }
 
 fn group_key(rec: &Record, keys: &[String]) -> (GroupKey, Attrs) {
@@ -301,6 +327,7 @@ pub(super) async fn run(
     mut rx: Box<dyn Consumer>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
+    mut inspect: Option<Inspector>,
 ) -> Result<()> {
     let Spec {
         size,
@@ -351,6 +378,12 @@ pub(super) async fn run(
                     return Ok(());
                 }
             }
+            // Fires only when inspection is on; answers a snapshot query from the node's
+            // own loop, so the reply is consistent with the folds above.
+            query = recv_query(&mut inspect) => match query {
+                Some(reply) => { let _ = reply.send(win.snapshot()); }
+                None => inspect = None, // every Handle dropped; stop polling
+            },
         }
     }
     // Upstream closed cleanly: flush whatever is still open.
@@ -639,6 +672,37 @@ mod tests {
         assert_eq!(out.len(), 1, "only [0,1000) has closed");
         assert_eq!(out[0].start_ts_nanos, Some(0));
         assert_eq!(out[0].value, 2.0, "the records at 200 and 700");
+    }
+
+    // --- state inspection ---
+
+    #[test]
+    fn snapshot_reports_open_groups_with_labels_and_samples() {
+        let mut w = win(AggregateOp::Sum, None, FaultAction::Skip, &["svc"]);
+        w.on_record(&rec("m", 2.0, &[("svc", AttrValue::Str("a".into()))]))
+            .unwrap();
+        w.on_record(&rec("m", 5.0, &[("svc", AttrValue::Str("a".into()))]))
+            .unwrap();
+        w.on_record(&rec("m", 9.0, &[("svc", AttrValue::Str("b".into()))]))
+            .unwrap();
+
+        let snap = w.snapshot();
+        assert_eq!(snap.kind, "window");
+        let mut groups = snap.groups;
+        groups.sort_by(|x, y| x.labels["svc"].cmp(&y.labels["svc"]));
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].labels["svc"], "a");
+        assert_eq!(groups[0].value, Some(7.0), "sum of a's two samples");
+        assert_eq!(groups[0].samples, 2);
+        assert!(groups[0].inputs.is_empty(), "inputs are a join concern");
+        assert_eq!((groups[0].start_nanos, groups[0].end_nanos), (0, SIZE));
+        assert_eq!(groups[1].labels["svc"], "b");
+        assert_eq!(groups[1].value, Some(9.0));
+        assert_eq!(groups[1].samples, 1);
+
+        // Only open windows are reported: once drained, the snapshot is empty.
+        let _ = w.drain_all();
+        assert!(w.snapshot().groups.is_empty());
     }
 
     // --- helpers ---

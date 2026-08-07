@@ -13,17 +13,20 @@ mod window;
 pub use window::Window;
 
 use crate::backend::{Consumer, Producer};
+use crate::inspect::Inspector;
 use crate::metrics::NodeMetrics;
 use anyhow::{Result, bail};
 use headrace_ir::Transform;
 
 /// Run one transform node to completion. `rxs` holds one consumer per input - exactly one
-/// for every transform except `join`, which fans in several.
+/// for every transform except `join`, which fans in several. `inspect` is the node's
+/// state-inspection channel when enabled; stateless transforms ignore it.
 pub async fn run(
     t: Transform,
     rxs: Vec<Box<dyn Consumer>>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
+    inspect: Option<Inspector>,
 ) -> Result<()> {
     match t {
         Transform::Filter { key, equals, .. } => filter::run(key, equals, one(rxs), tx, nm).await,
@@ -46,7 +49,7 @@ pub async fn run(
                 aggregate,
                 name,
             };
-            window::run(spec, one(rxs), tx, nm).await
+            window::run(spec, one(rxs), tx, nm, inspect).await
         }
         Transform::Map {
             name,
