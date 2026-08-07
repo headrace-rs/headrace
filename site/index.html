@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Headrace — OTel-native, stateful stream processing</title>
+  <title>Headrace - pre-aggregate telemetry, ship less to your vendor</title>
   <meta name="description" content="OTel-native, stateful stream processing in a single Rust binary. Point OTLP at it, define aggregations declaratively, emit to any backend." />
   <link rel="icon" href="/favicon.svg" />
   <link rel="stylesheet" href="/styles.css" />
@@ -44,7 +44,6 @@
 
   <main>
     <section class="hero">
-      <span class="eyebrow">OTel-native pre-aggregation</span>
       <h1>Pre-aggregate telemetry. <span class="accent">Ship less</span> to your vendor.</h1>
       <p class="sub">
         Run stateful, event-time aggregations over OpenTelemetry and send windowed rollups
@@ -60,6 +59,32 @@
     <section class="diagram">
       <img class="t-light" src="/pipeline.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
       <img class="t-dark" src="/pipeline-dark.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
+    </section>
+
+    <section class="show">
+      <div class="show-copy">
+        <h2>A pipeline is a YAML file</h2>
+        <p>Declare sources, transforms, and sinks. <code>headrace validate</code> checks it before it runs, and the same file runs in-process or scaled.</p>
+        <div class="run"><span class="p">$</span> headrace run pipeline.yaml</div>
+      </div>
+      <div class="code-card"><pre><code>sources:
+  - type: otlp
+    id: in
+    listen: 0.0.0.0:4317
+
+transforms:
+  - type: window
+    id: rollup
+    input: in
+    size: 5s
+    group_by: [service.name, http.route]
+    aggregate: { op: avg, field: value }
+
+sinks:
+  - type: otlp
+    id: out
+    input: rollup
+    endpoint: http://collector:4317</code></pre></div>
     </section>
 
     <section class="features">
@@ -79,7 +104,7 @@
   </main>
 
   <footer class="foot">
-    <span>Apache-2.0 · built in Rust</span>
+    <span class="foot-meta"><span class="crab">🦀</span> Built in Rust · Apache-2.0 · Hosted on Cloudflare</span>
     <nav class="fl">
       <a href="/docs">Docs</a>
       <a href="https://github.com/headrace-rs/headrace">GitHub</a>
