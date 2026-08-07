@@ -24,3 +24,4 @@ Significant architectural decisions are recorded here as ADRs, using the
 - [0009](./0009-sliding-and-session-windows.md) - Sliding and session windows, with lateness and staleness
 - [0010](./0010-cross-series-arithmetic.md) - Cross-series arithmetic
 - [0011](./0011-relabel-and-enrich-records.md) - Relabel and enrich records (proposed)
+- [0012](./0012-join-transform.md) - Join transform: align N series, optionally reduce
