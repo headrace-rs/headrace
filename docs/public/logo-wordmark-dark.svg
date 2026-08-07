@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none" role="img" aria-label="Headrace">
+  <g transform="translate(0,1) scale(0.5)" stroke="#2DD4BF" stroke-width="11" stroke-linecap="round">
+    <path d="M30 20 V76"/>
+    <path d="M66 20 V76"/>
+    <path d="M30 45 Q39 39 48 45 T66 45"/>
+  </g>
+  <text x="54" y="34" font-family="Roboto, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.6" fill="#E6EDF3">headrace</text>
+</svg>

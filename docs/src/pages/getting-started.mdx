@@ -1,0 +1,27 @@
+---
+title: Getting started
+description: Install and run your first headrace pipeline.
+showAskAi: false
+---
+
+# Getting started
+
+Run the bundled example - a generator feeding a filter and a 5s window, printing
+rollups to stdout:
+
+```sh
+cargo run -p headrace -- run examples/latency.yaml
+```
+
+Validate a pipeline, or print the IR JSON Schema:
+
+```sh
+cargo run -p headrace -- validate examples/latency.yaml
+cargo run -p headrace -- schema
+```
+
+Export headrace's own metrics over OTLP while it runs:
+
+```sh
+cargo run -p headrace -- --metrics otlp run examples/latency.yaml
+```
