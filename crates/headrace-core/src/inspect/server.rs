@@ -4,10 +4,11 @@
 //! Read-only and unauthenticated - meant for a trusted admin network (localhost, a debug
 //! sidecar), so it is opt-in behind `--inspect-addr` and binds its own port.
 
-use super::{NodeSnapshot, Registry};
+use super::{GroupSnapshot, Registry};
 use headrace_proto::v1::state_server::{State, StateServer};
 use headrace_proto::v1::{GetRequest, GetResponse, GroupState, NodeState};
 use std::net::SocketAddr;
+use tokio::sync::oneshot;
 use tonic::{Request, Response, Status};
 
 /// Serves [`Registry`] snapshots over the `State` service.
@@ -29,40 +30,55 @@ impl State for StateService {
         for id in ids {
             // A requested-but-unknown or already-exited node is simply omitted.
             if let Some(snap) = self.registry.query(&id).await {
-                nodes.push(to_proto(id, snap));
+                nodes.push(NodeState {
+                    id,
+                    kind: snap.kind.to_string(),
+                    groups: snap.groups.into_iter().map(Into::into).collect(),
+                });
             }
         }
         Ok(Response::new(GetResponse { nodes }))
     }
 }
 
-/// Map a node's snapshot onto the wire type.
-fn to_proto(id: String, snap: NodeSnapshot) -> NodeState {
-    NodeState {
-        id,
-        kind: snap.kind.to_string(),
-        groups: snap
-            .groups
-            .into_iter()
-            .map(|g| GroupState {
-                labels: g.labels.into_iter().collect(),
-                window_start_nanos: g.start_nanos,
-                window_end_nanos: g.end_nanos,
-                value: g.value,
-                inputs: g.inputs.into_iter().collect(),
-                samples: g.samples,
-            })
-            .collect(),
+/// A snapshot group maps directly onto its wire type. (The `id` for a `NodeState` comes from
+/// the registry, not the snapshot, so that conversion stays inline in `get`.)
+impl From<GroupSnapshot> for GroupState {
+    fn from(g: GroupSnapshot) -> Self {
+        GroupState {
+            labels: g.labels.into_iter().collect(),
+            window_start_nanos: g.start_nanos,
+            window_end_nanos: g.end_nanos,
+            value: g.value,
+            inputs: g.inputs.into_iter().collect(),
+            samples: g.samples,
+        }
     }
 }
 
-/// Aborts the served-server task when the pipeline run ends, so the port is released no
-/// matter how `run` returns.
-pub struct Server(tokio::task::JoinHandle<()>);
+/// Handle to the running `State` server. [`shutdown`](Server::shutdown) stops it gracefully;
+/// dropping it without that is a backstop that aborts the task so the port never leaks.
+pub struct Server {
+    stop: Option<oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Server {
+    /// Stop accepting, let in-flight requests finish, and wait for the server task to end -
+    /// the same best-effort drain the pipeline itself does on shutdown.
+    pub async fn shutdown(mut self) {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(()); // server task may already be gone
+        }
+        let _ = (&mut self.task).await;
+    }
+}
 
 impl Drop for Server {
     fn drop(&mut self) {
-        self.0.abort();
+        // Backstop for a caller that never called `shutdown` (e.g. a panic unwinding past
+        // it): don't leak the task. A graceful `shutdown` has already finished by here.
+        self.task.abort();
     }
 }
 
@@ -75,16 +91,21 @@ pub fn spawn(registry: Registry, addr: SocketAddr) -> Server {
         .register_encoded_file_descriptor_set(headrace_proto::FILE_DESCRIPTOR_SET)
         .build_v1()
         .expect("checked-in descriptor is valid");
+    let (stop, stop_rx) = oneshot::channel();
     let task = tokio::spawn(async move {
         tracing::info!(%addr, "state inspection server listening");
-        if let Err(e) = tonic::transport::Server::builder()
+        let served = tonic::transport::Server::builder()
             .add_service(svc)
             .add_service(reflection)
-            .serve(addr)
-            .await
-        {
+            .serve_with_shutdown(addr, async {
+                let _ = stop_rx.await;
+            });
+        if let Err(e) = served.await {
             tracing::error!(%addr, error = %e, "state inspection server stopped");
         }
     });
-    Server(task)
+    Server {
+        stop: Some(stop),
+        task,
+    }
 }

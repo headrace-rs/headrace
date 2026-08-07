@@ -79,3 +79,33 @@ async fn state_get_reports_live_window_state() {
 
     run.abort();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn graceful_shutdown_stops_serving() {
+    use headrace_core::inspect::{Registry, server};
+
+    let addr = free_addr();
+    let server = server::spawn(Registry::default(), addr);
+    let endpoint = format!("http://{addr}");
+
+    // Wait until it answers a Get (an empty registry replies with no nodes).
+    let mut up = false;
+    for _ in 0..200 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        if let Ok(mut c) = StateClient::connect(endpoint.clone()).await
+            && c.get(GetRequest { node: vec![] }).await.is_ok()
+        {
+            up = true;
+            break;
+        }
+    }
+    assert!(up, "server never came up");
+
+    server.shutdown().await;
+
+    // After a graceful shutdown the port is closed, so a fresh connect fails.
+    assert!(
+        StateClient::connect(endpoint).await.is_err(),
+        "server should stop accepting once shut down"
+    );
+}

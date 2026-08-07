@@ -294,10 +294,9 @@ pub async fn run(
     // Release the backend's retained senders so channel-close propagates on drain.
     drop(backend);
 
-    // The State server runs alongside the pipeline; its guard aborts it when `run` returns,
-    // no matter which path we exit through.
+    // The State server runs alongside the pipeline.
     #[cfg(feature = "inspect")]
-    let _inspect_server = start_inspect(opts, registry);
+    let inspect_server = start_inspect(opts, registry);
 
     tracing::info!(
         sources = p.sources.len(),
@@ -306,9 +305,28 @@ pub async fn run(
         "pipeline running; Ctrl-C/SIGTERM to stop"
     );
 
+    let result = supervise_and_drain(&mut sources, &mut work).await;
+
+    // Stop the inspection server the same way the pipeline stops: gracefully, once the work
+    // has settled, so a final inspect during drain still succeeds.
+    #[cfg(feature = "inspect")]
+    if let Some(server) = inspect_server {
+        server.shutdown().await;
+    }
+
+    result
+}
+
+/// Run until a shutdown signal, a node failure, or natural completion; on a signal, drain
+/// best-effort (sources stop, their dropped senders close the graph so windows flush and
+/// sinks empty; a second signal forces an abort).
+async fn supervise_and_drain(
+    sources: &mut JoinSet<Result<()>>,
+    work: &mut JoinSet<Result<()>>,
+) -> Result<()> {
     // Phase 1: run until a signal, a node failure, or natural completion.
     let signalled = tokio::select! {
-        res = supervise(&mut sources, &mut work) => return res,
+        res = supervise(sources, work) => return res,
         _ = shutdown_signal() => true,
     };
 
@@ -317,7 +335,7 @@ pub async fn run(
         tracing::info!("shutdown signal received; draining (signal again to force)");
         sources.abort_all();
         tokio::select! {
-            res = drain(&mut work) => return res,
+            res = drain(work) => return res,
             _ = shutdown_signal() => {
                 tracing::warn!("second signal; aborting in-flight work");
                 work.abort_all();
