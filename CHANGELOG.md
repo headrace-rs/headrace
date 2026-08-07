@@ -1,3 +1,9 @@
+## 0.1.8 (2026-08-07)
+
+### Features
+
+- add optional name to window and map
+
 ## 0.1.7 (2026-08-06)
 
 ### Features
