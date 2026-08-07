@@ -1,3 +1,9 @@
+## 0.1.12 (2026-08-07)
+
+### Fixes
+
+- raise theme-image toggle specificity
+
 ## 0.1.11 (2026-08-07)
 
 ### Fixes
