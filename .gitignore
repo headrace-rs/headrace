@@ -2,6 +2,9 @@
 Cargo.lock.bak
 *.swp
 
+# Combined web build output (landing at /, Vocs docs at /docs)
+/dist
+
 ### macOS ###
 .DS_Store
 .AppleDouble
