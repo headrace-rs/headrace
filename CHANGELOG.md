@@ -1,3 +1,9 @@
+## 0.1.11 (2026-08-07)
+
+### Fixes
+
+- hide off-theme images before CSS loads
+
 ## 0.1.10 (2026-08-07)
 
 ### Features
