@@ -33,7 +33,7 @@ cargo run -p headrace -- --metrics otlp run examples/latency.yaml   # export hea
 | Kind | Supported | Planned |
 |---|---|---|
 | Sources | `otlp` (gRPC receiver), `generator`, `stdin` | - |
-| Transforms | `filter`, `window` (tumbling + sliding, event-time), `map` (numeric expressions) | session windows, `join`, `wasm` |
+| Transforms | `filter`, `window` (tumbling + sliding, event-time), `map`, `join` (cross-series) | session windows, `wasm` |
 | Sinks | `otlp` (gRPC exporter), `stdout` (text / json) | Prometheus remote-write |
 | Aggregates | `count`, `sum`, `min`, `max`, `avg` | quantiles (mergeable sketches) |
 | Backend | in-process (single binary) | NATS JetStream (partitioned, scaled) |

@@ -368,10 +368,10 @@ Branding and logo: done.
 
 **v0.3 - richer transforms and introspection** (still in-process), in sequence:
 
-1. **`map`** *(done)* **+ `join`** - an expression transform (closed numeric expression over
+1. **`map` + `join`** *(done)* - an expression transform (closed numeric expression over
    `value` and fields) plus a co-partitioned join; together they unlock cross-series arithmetic
-   like `a - b` (ADR-0010). Join needs event-time windows for "the same window" to mean something,
-   so it follows v0.2.
+   like `a - b` (ADR-0010, ADR-0012). Join aligns windowed inputs on their shared `group_by` and
+   window, and optionally reduces them with a `value` expression.
 2. **Local state inspection** - a read-only view of current accumulators per
    `(transform_id, group_key, window)`, via a `/state` admin endpoint and a `headrace inspect`
    command. Meaningful because every aggregate is a monoid (see *Stateful semantics*).
