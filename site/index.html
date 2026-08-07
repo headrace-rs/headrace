@@ -16,14 +16,17 @@
     })();
   </script>
   <style>
-    /* Critical: pick the theme image before the external stylesheet loads, so exactly one
-       logo/diagram ever paints - and it still holds if styles.css is slow or missing. */
-    .t-dark { display: none; }
-    @media (prefers-color-scheme: dark) { .t-light { display: none; } .t-dark { display: block; } }
-    :root[data-theme="light"] .t-light { display: block; }
-    :root[data-theme="light"] .t-dark { display: none; }
-    :root[data-theme="dark"] .t-light { display: none; }
-    :root[data-theme="dark"] .t-dark { display: block; }
+    /* Critical: pick the theme image at first paint (before any toggle sets data-theme),
+       so exactly one logo/diagram shows even without the external stylesheet. The `img.`
+       prefix matters: `.brand img` / `.diagram img` set `display: block` at specificity
+       (0,1,1), which outranks a bare `.t-dark` (0,1,0) and would show both - `img.t-dark`
+       ties them and wins on order (this block follows the stylesheet link). */
+    img.t-dark { display: none; }
+    @media (prefers-color-scheme: dark) { img.t-light { display: none; } img.t-dark { display: block; } }
+    :root[data-theme="light"] img.t-light { display: block; }
+    :root[data-theme="light"] img.t-dark { display: none; }
+    :root[data-theme="dark"] img.t-light { display: none; }
+    :root[data-theme="dark"] img.t-dark { display: block; }
   </style>
 </head>
 <body>
