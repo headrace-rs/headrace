@@ -16,15 +16,16 @@ use crate::metrics::NodeMetrics;
 use anyhow::{Result, bail};
 use headrace_ir::Transform;
 
-/// Run one transform node to completion.
+/// Run one transform node to completion. `rxs` holds one consumer per input - exactly one
+/// for every transform except `join`, which fans in several.
 pub async fn run(
     t: Transform,
-    rx: Box<dyn Consumer>,
+    rxs: Vec<Box<dyn Consumer>>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
 ) -> Result<()> {
     match t {
-        Transform::Filter { key, equals, .. } => filter::run(key, equals, rx, tx, nm).await,
+        Transform::Filter { key, equals, .. } => filter::run(key, equals, one(rxs), tx, nm).await,
         Transform::Window {
             name,
             size,
@@ -44,7 +45,7 @@ pub async fn run(
                 aggregate,
                 name,
             };
-            window::run(spec, rx, tx, nm).await
+            window::run(spec, one(rxs), tx, nm).await
         }
         Transform::Map {
             name,
@@ -52,8 +53,16 @@ pub async fn run(
             on_missing,
             on_invalid,
             ..
-        } => map::run(value, on_missing, on_invalid, name, rx, tx, nm).await,
+        } => map::run(value, on_missing, on_invalid, name, one(rxs), tx, nm).await,
+        Transform::Join { .. } => bail!("join is not yet implemented"),
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
     }
+}
+
+/// The single consumer of a single-input transform. The IR gives every transform but
+/// `join` exactly one `input`, so this cannot be empty for those nodes.
+fn one(mut rxs: Vec<Box<dyn Consumer>>) -> Box<dyn Consumer> {
+    rxs.pop()
+        .expect("single-input transform must have exactly one input")
 }

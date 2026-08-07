@@ -133,6 +133,35 @@ fn parses_map_expression() {
 }
 
 #[test]
+fn parses_join() {
+    let p: Pipeline = serde_yaml::from_str(
+        r#"
+        sources:
+          - { type: generator, id: s1 }
+          - { type: generator, id: s2 }
+        transforms:
+          - { type: window, id: w1, input: s1, size: 5s, aggregate: { op: avg } }
+          - { type: window, id: w2, input: s2, size: 5s, aggregate: { op: avg } }
+          - { type: join, id: j, inputs: [w1, w2], name: "diff", value: "w1 - w2" }
+        sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+    )
+    .unwrap();
+    let Transform::Join {
+        inputs,
+        name,
+        value,
+        ..
+    } = &p.transforms[2]
+    else {
+        panic!("expected join");
+    };
+    assert_eq!(inputs, &["w1", "w2"]);
+    assert_eq!(name.as_deref(), Some("diff"));
+    assert_eq!(value.as_deref(), Some("w1 - w2"));
+}
+
+#[test]
 fn pipeline_roundtrips_through_json() {
     let p: Pipeline = serde_yaml::from_str(EXAMPLE).unwrap();
     let json = serde_json::to_string(&p).unwrap();
@@ -150,6 +179,7 @@ fn schema_advertises_the_node_catalog() {
         "otlp",
         "window",
         "map",
+        "join",
         "slide",
         "allowed_lateness",
         "on_missing",

@@ -123,7 +123,7 @@ async fn otlp_round_trips_through_a_window_rollup() {
     ));
     let win_task = tokio::spawn(headrace_core::transform::run(
         window,
-        win_in,
+        vec![win_in],
         win_out,
         NodeMetrics::bind(&metrics, "w", NodeKind::Window),
     ));

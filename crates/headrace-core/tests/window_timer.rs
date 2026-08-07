@@ -27,7 +27,7 @@ async fn window_fires_on_the_event_time_watermark() {
     let op: Transform =
         serde_yaml::from_str("type: window\nid: w\ninput: in\nsize: 5s\naggregate:\n  op: count")
             .unwrap();
-    let task = tokio::spawn(headrace_core::transform::run(op, win_rx, win_tx, nm));
+    let task = tokio::spawn(headrace_core::transform::run(op, vec![win_rx], win_tx, nm));
 
     let five_s = Duration::from_secs(5).as_nanos() as u64;
     // Three records land in the first window [0, 5s).
@@ -72,7 +72,7 @@ async fn idle_timeout_collapses_an_open_window() {
         "type: window\nid: w\ninput: in\nsize: 1h\nidle_timeout: 5s\naggregate:\n  op: count",
     )
     .unwrap();
-    let task = tokio::spawn(headrace_core::transform::run(op, win_rx, win_tx, nm));
+    let task = tokio::spawn(headrace_core::transform::run(op, vec![win_rx], win_tx, nm));
 
     // Two records land in one open window (watermark stays far below its end).
     feed.send(None, rec_at(1_000_000_000)).await.unwrap();

@@ -81,7 +81,9 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
     // 3. Every input resolves, and each output has at most one consumer.
     let mut consumed = HashSet::new();
     for o in &p.transforms {
-        check_edge(o.input(), &outputs, &mut consumed)?;
+        for input in o.inputs() {
+            check_edge(input, &outputs, &mut consumed)?;
+        }
     }
     for s in &p.sinks {
         check_edge(s.input(), &outputs, &mut consumed)?;
@@ -127,7 +129,9 @@ fn check_edge<'a>(
 fn check_reachable(p: &Pipeline) -> Result<(), ValidationError> {
     let mut consumers: HashMap<&str, Vec<&str>> = HashMap::new();
     for o in &p.transforms {
-        consumers.entry(o.input()).or_default().push(o.id());
+        for input in o.inputs() {
+            consumers.entry(input).or_default().push(o.id());
+        }
     }
     let mut seen: HashSet<&str> = p.sources.iter().map(|s| s.id()).collect();
     let mut stack: Vec<&str> = seen.iter().copied().collect();
@@ -169,13 +173,13 @@ pub async fn run(p: Pipeline, mut backend: impl Backend, metrics: SharedMetrics)
         });
     }
     for o in &p.transforms {
-        let rx = backend.consumer(o.input());
+        let rxs: Vec<_> = o.inputs().iter().map(|id| backend.consumer(id)).collect();
         let tx = backend.producer(o.id());
         let nm = NodeMetrics::bind(&metrics, o.id(), transform_kind(o));
         let node = nm.clone();
         let op = o.clone();
         work.spawn(async move {
-            let r = transform::run(op, rx, tx, nm).await;
+            let r = transform::run(op, rxs, tx, nm).await;
             record_error(&r, &node);
             r
         });
@@ -244,6 +248,7 @@ fn transform_kind(o: &Transform) -> NodeKind {
         Transform::Filter { .. } => NodeKind::Filter,
         Transform::Window { .. } => NodeKind::Window,
         Transform::Map { .. } => NodeKind::Map,
+        Transform::Join { .. } => NodeKind::Join,
         // Forward-compat: an unknown transform fails in `transform::run`; kind is cosmetic.
         _ => NodeKind::Filter,
     }
@@ -396,6 +401,63 @@ mod tests {
         assert!(matches!(
             validate(&p),
             Err(ValidationError::InvalidWindow { .. })
+        ));
+    }
+
+    #[test]
+    fn accepts_a_join() {
+        let p = pipeline(
+            r#"
+            sources:
+              - { type: generator, id: s1, interval: 1s }
+              - { type: generator, id: s2, interval: 1s }
+            transforms:
+              - { type: window, id: w1, input: s1, size: 5s, aggregate: { op: count } }
+              - { type: window, id: w2, input: s2, size: 5s, aggregate: { op: count } }
+              - { type: join, id: j, inputs: [w1, w2], value: "w1 + w2" }
+            sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+        );
+        assert!(validate(&p).is_ok());
+    }
+
+    #[tokio::test]
+    async fn join_is_not_yet_runnable() {
+        // Join validates and wires, but execution is a follow-up: running one fails fast.
+        // Also exercises the multi-consumer wiring in `run`.
+        let p = pipeline(
+            r#"
+            sources:
+              - { type: generator, id: s1, interval: 5ms }
+              - { type: generator, id: s2, interval: 5ms }
+            transforms:
+              - { type: window, id: w1, input: s1, size: 1h, aggregate: { op: count } }
+              - { type: window, id: w2, input: s2, size: 1h, aggregate: { op: count } }
+              - { type: join, id: j, inputs: [w1, w2], value: "w1 + w2" }
+            sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+        );
+        let m: SharedMetrics = Arc::new(crate::NoopMetrics);
+        let err = run(p, InProcess::default(), m)
+            .await
+            .expect_err("join is not runnable yet");
+        assert!(err.to_string().contains("not yet implemented"));
+    }
+
+    #[test]
+    fn rejects_join_with_dangling_input() {
+        let p = pipeline(
+            r#"
+            sources: [{ type: generator, id: s1, interval: 1s }]
+            transforms:
+              - { type: window, id: w1, input: s1, size: 5s, aggregate: { op: count } }
+              - { type: join, id: j, inputs: [w1, nope], value: "w1" }
+            sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&p),
+            Err(ValidationError::UnknownInput(_))
         ));
     }
 

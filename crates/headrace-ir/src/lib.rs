@@ -98,6 +98,22 @@ pub enum Transform {
         #[serde(default)]
         on_invalid: FaultAction,
     },
+    /// Combine several inputs, aligned on their shared `group_by` and window, into one
+    /// record that carries each input's value as an attribute named by input id. An
+    /// optional `value` expression reduces them (`a - b`); otherwise a downstream `map`
+    /// or `wasm` does. Inputs must be windowed at the same size (ADR-0012).
+    Join {
+        id: String,
+        /// Upstream node ids to align; they must share a `group_by` and window size.
+        inputs: Vec<String>,
+        /// Rename the emitted metric.
+        #[serde(default)]
+        name: Option<String>,
+        /// Reduce the aligned inputs to the output value (an expression over the input
+        /// ids). Omit to carry each input's value as an attribute for a downstream node.
+        #[serde(default)]
+        value: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -175,14 +191,18 @@ impl Transform {
         match self {
             Transform::Filter { id, .. }
             | Transform::Window { id, .. }
-            | Transform::Map { id, .. } => id,
+            | Transform::Map { id, .. }
+            | Transform::Join { id, .. } => id,
         }
     }
-    pub fn input(&self) -> &str {
+    /// The upstream node ids this transform reads. One for every transform except
+    /// `join`, which fans in several.
+    pub fn inputs(&self) -> Vec<&str> {
         match self {
             Transform::Filter { input, .. }
             | Transform::Window { input, .. }
-            | Transform::Map { input, .. } => input,
+            | Transform::Map { input, .. } => vec![input],
+            Transform::Join { inputs, .. } => inputs.iter().map(String::as_str).collect(),
         }
     }
 }

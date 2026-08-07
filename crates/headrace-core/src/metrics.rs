@@ -16,6 +16,7 @@ pub enum NodeKind {
     Filter,
     Window,
     Map,
+    Join,
     Sink,
 }
 
@@ -26,6 +27,7 @@ impl NodeKind {
             NodeKind::Filter => "filter",
             NodeKind::Window => "window",
             NodeKind::Map => "map",
+            NodeKind::Join => "join",
             NodeKind::Sink => "sink",
         }
     }
