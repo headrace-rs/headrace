@@ -33,9 +33,11 @@ Constraint: deploy as a static site to a low-cost, Git-integrated host on a cust
   page is brand-themed and light/dark.
 - **Assembly:** `scripts/build-web.sh` builds the docs and assembles `dist/` - landing at `/`,
   `docs/dist/public` at `/docs`.
-- **Hosting: Cloudflare Pages** on **`headrace.rs`**, deployed from GitHub Actions with
-  `wrangler pages deploy dist` (`.github/workflows/web.yml`); pushes to `main` publish, PRs get
-  `*.pages.dev` previews. Netlify was the fallback; Cloudflare was chosen.
+- **Hosting: Cloudflare Pages** on **`headrace.rs`**, via Cloudflare's Git integration: it builds
+  `scripts/build-web.sh` and publishes `dist/` on each push - `main` to production, PRs get
+  `*.pages.dev` previews. (A GitHub Actions + `wrangler` deploy was the first plan, but it meant
+  managing Cloudflare secrets in the repo and a second, redundant build; the Git integration needs
+  neither.) Netlify was the fallback; Cloudflare was chosen.
 - **ADRs stay repo-internal** in `docs/adr/` - they are decision records, not site content, so
   they are not rendered on the site (this reverses the earlier draft that moved them under the
   site).
@@ -57,7 +59,7 @@ dist/                     # combined output (git-ignored): / = landing, /docs = 
 
 - The docs bring a Node/Vite/React toolchain (`docs/package.json` + lockfile) and a CI job; the
   landing stays zero-build (a folder of files). Editing docs prose is still plain markdown.
-- One domain, one Cloudflare Pages project, one workflow - the combined `dist/` is what ships.
+- One domain, one Cloudflare Pages project, one build - the combined `dist/` is what ships.
   Host and domain are swappable: any static host consumes the same `dist/`.
 - `DESIGN.md` stays canonical, so docs Concept pages link into it rather than duplicating it;
   docs.rs remains the API reference and is never duplicated.
