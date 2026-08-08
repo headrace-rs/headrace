@@ -7,6 +7,7 @@
   <meta name="description" content="OTel-native, stateful stream processing in a single Rust binary. Point OTLP at it, define aggregations declaratively, emit to any backend." />
   <link rel="icon" href="/favicon.svg" />
   <link rel="stylesheet" href="/styles.css" />
+  <script src="/prism.js" defer></script>
   <script>
     // Apply saved / URL-forced theme before paint (no flash). Defaults to system.
     (function () {
@@ -46,9 +47,9 @@
     <section class="hero">
       <h1>Pre-aggregate telemetry. <span class="accent">Ship less</span> to your vendor.</h1>
       <p class="sub">
-        Run stateful, event-time aggregations over OpenTelemetry and send windowed rollups
-        downstream instead of the raw firehose. One Rust binary: in-process at the edge, or
-        scaled across your cluster over a partitioned backend.
+        Run stateful, event-time aggregations over OpenTelemetry and forward the rollups to
+        your backend, not every datapoint. One Rust binary: in-process at the edge, or scaled
+        across your cluster over a partitioned backend.
       </p>
       <div class="cta-row">
         <a class="btn" href="/docs">Get started →</a>
@@ -61,13 +62,30 @@
       <img class="t-dark" src="/pipeline-dark.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
     </section>
 
+    <section class="features">
+      <div class="feat">
+        <h3>Ship less downstream</h3>
+        <p>Emit windowed rollups instead of every datapoint. Your observability bill tracks signal, not raw volume.</p>
+      </div>
+      <div class="feat">
+        <h3>Event-time windows</h3>
+        <p>Watermarks, allowed lateness, tumbling and sliding. Correct under late and out-of-order data.</p>
+      </div>
+      <div class="feat">
+        <h3>Edge or cloud, one binary</h3>
+        <p>Run in-process for dev and the edge, or scale it across a cluster over a partitioned backend. OTLP in and out, either way.</p>
+      </div>
+    </section>
+
     <section class="show">
       <div class="show-copy">
         <h2>A pipeline is a YAML file</h2>
         <p>Declare sources, transforms, and sinks. <code>headrace validate</code> checks it before it runs, and the same file runs in-process or scaled.</p>
         <div class="run"><span class="p">$</span> headrace run pipeline.yaml</div>
       </div>
-      <div class="code-card"><pre><code>sources:
+      <div class="code-card">
+        <div class="code-head">pipeline.yaml</div>
+        <pre><code class="language-yaml">sources:
   - type: otlp
     id: in
     listen: 0.0.0.0:4317
@@ -78,27 +96,14 @@ transforms:
     input: in
     size: 5s
     group_by: [service.name, http.route]
-    aggregate: { op: avg, field: value }
+    aggregate:
+      op: avg
 
 sinks:
   - type: otlp
     id: out
     input: rollup
-    endpoint: http://collector:4317</code></pre></div>
-    </section>
-
-    <section class="features">
-      <div class="feat">
-        <h3>Ship less downstream</h3>
-        <p>Emit windowed rollups instead of every datapoint. Your observability bill tracks signal, not raw volume.</p>
-      </div>
-      <div class="feat">
-        <h3>Event-time windows</h3>
-        <p>Watermarks, <code>allowed_lateness</code>, tumbling and sliding. Correct under late and out-of-order data.</p>
-      </div>
-      <div class="feat">
-        <h3>Edge or cloud, one binary</h3>
-        <p>Run in-process for dev and the edge, or scale it across a cluster over a partitioned backend. OTLP in and out, either way.</p>
+    endpoint: http://collector:4317</code></pre>
       </div>
     </section>
   </main>

@@ -2,3 +2,8 @@
 # to `ON`. It is not a typo.
 [default.extend-words]
 PN = "PN"
+
+# Vendored, minified Prism build: its packed regex source trips false positives
+# (e.g. `lang(?:uage)?` -> `lang(?:usage)?`). Never rewrite third-party assets.
+[files]
+extend-exclude = ["site/prism.js"]
