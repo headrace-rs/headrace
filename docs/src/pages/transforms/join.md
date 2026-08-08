@@ -1,3 +1,9 @@
+---
+title: join
+description: Combine several windowed inputs into one series for cross-series arithmetic.
+showAskAi: false
+---
+
 # Join
 
 The `join` transform combines several windowed inputs into one series - the basis for
@@ -35,9 +41,9 @@ join:      [0,5s): hi=214, lo=190 -> emit    [5s,10s): hi=250, lo=210 -> emit
 
 ## Reduce, or carry
 
-- **With `value`** (an expression over the input ids, see [map.md](./map.md) for the grammar):
-  join computes the output value and emits a clean record - labels, window, and the computed
-  `value`. Sink-ready.
+- **With `value`** (an expression over the input ids, see [map](/transforms/map) for the
+  grammar): join computes the output value and emits a clean record - labels, window, and the
+  computed `value`. Sink-ready.
 - **Without `value`** (align-only): join carries each input's value as an **attribute named by
   its input id**, leaving the computation to a downstream `map` or `wasm`. Such a join must feed
   a transform, not a sink (its records have no computed value) - `validate` enforces this.

@@ -42,7 +42,7 @@ cargo run -p headrace -- --metrics otlp run examples/latency.yaml   # export hea
 Windows are event-time with watermarks, `allowed_lateness`, and `idle_timeout` - see the
 [window](./docs/src/pages/transforms/window.md) guide. The `map` transform's numeric
 expression language is documented in [map](./docs/src/pages/transforms/map.md), and
-cross-series `join` in [docs/join.md](./docs/join.md).
+cross-series `join` in [join](./docs/src/pages/transforms/join.md).
 
 ## Self-metrics
 

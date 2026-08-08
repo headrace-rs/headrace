@@ -6,14 +6,15 @@ showAskAi: false
 
 # Headrace
 
-OTel-native, stateful stream processing in a single Rust binary. Point OTLP at it,
-pre-aggregate telemetry, and ship windowed rollups downstream instead of the raw firehose.
+OTel-native, stateful stream processing in a single Rust binary. Run stateful, event-time
+aggregations over OpenTelemetry and forward the rollups to your backend, not every datapoint.
 
 Run it in-process for dev and the edge, or scale it across a cluster over a partitioned
 backend. Same pipeline, either way.
 
 ## Start here
 
+- [Install](/install) - get the binary from source, Docker, or Helm.
 - [Getting started](/getting-started) - run your first pipeline in a minute.
-- Transforms - [filter](/transforms/filter), [map](/transforms/map), [window](/transforms/window).
+- Transforms - [filter](/transforms/filter), [map](/transforms/map), [window](/transforms/window), [join](/transforms/join).
 - [Design](https://github.com/headrace-rs/headrace/blob/main/DESIGN.md) - how it works, end to end.

@@ -46,6 +46,7 @@ button[data-single-line="true"][class]{top:.625rem!important;translate:none!impo
   ],
   sidebar: [
     { text: 'Overview', link: '/' },
+    { text: 'Install', link: '/install' },
     { text: 'Getting started', link: '/getting-started' },
     {
       text: 'Transforms',
@@ -54,6 +55,7 @@ button[data-single-line="true"][class]{top:.625rem!important;translate:none!impo
         { text: 'Filter', link: '/transforms/filter' },
         { text: 'Map', link: '/transforms/map' },
         { text: 'Window', link: '/transforms/window' },
+        { text: 'Join', link: '/transforms/join' },
       ],
     },
   ],
