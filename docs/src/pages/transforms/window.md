@@ -88,14 +88,15 @@ transforms:
   - type: window
     id: rollup
     input: in
-    name: "req.latency.avg" # rename the emitted metric (optional)
-    size: 5s               # tumbling window length (required)
-    allowed_lateness: 2s   # event-time grace before firing (optional, default 0s)
-    idle_timeout: 30s      # flush open windows after this quiet (optional, default off)
+    name: "req.latency.avg"  # optional: rename the emitted metric
+    size: 5s                 # required: window length
+    slide: 1s                # optional: step between windows; sliding when < size (default: tumbling)
+    allowed_lateness: 2s     # optional: event-time grace before firing (default: none)
+    idle_timeout: 30s        # optional: force-close quiet windows (default: off)
     group_by: [service.name, http.route]
-    aggregate:
-      op: avg              # count | sum | min | max | avg
-      field: value         # numeric attribute to reduce (default: the record's value)
-      on_missing: skip     # skip | error, when `field` is absent
-      on_invalid: error    # skip | error, when `field` is present but non-numeric
+    aggregate:               # required: how to reduce each group
+      op: avg                # count | sum | min | max | avg
+      field: duration        # optional: attribute to reduce (default: the record's value)
+      on_missing: skip       # skip | error (default: skip)
+      on_invalid: skip       # skip | error (default: skip)
 ```

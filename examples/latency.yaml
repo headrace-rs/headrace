@@ -20,7 +20,6 @@ transforms:
   - type: window
     id: rollup
     input: only_checkout
-    kind: tumbling
     size: 5s
     group_by: [service.name, http.route]
     aggregate:
