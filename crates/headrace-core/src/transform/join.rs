@@ -11,7 +11,7 @@
 
 use super::expr::Expr;
 use crate::backend::{Consumer, Producer};
-use crate::inspect::{GroupSnapshot, Inspector, NodeSnapshot, labels_of, recv_query};
+use crate::inspect::{GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish, recv_query};
 use crate::metrics::NodeMetrics;
 use crate::record::{AttrValue, Attrs, Record};
 use anyhow::{Result, anyhow};
@@ -40,7 +40,7 @@ pub(super) async fn run(
     rxs: Vec<Box<dyn Consumer>>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
-    mut inspect: Option<Inspector>,
+    mut inspect: Option<Inspect>,
 ) -> Result<()> {
     let Spec {
         id,
@@ -130,6 +130,8 @@ pub(super) async fn run(
             buckets.remove(&k);
             nm.dropped(1);
         }
+
+        publish(&inspect, || snapshot(&buckets, &inputs));
     }
     Ok(())
 }
@@ -309,9 +311,6 @@ mod tests {
 
     #[tokio::test]
     async fn snapshot_reports_incomplete_buckets() {
-        use crate::inspect::Query;
-        use tokio::sync::mpsc;
-
         let mut be = InProcess::new(64);
         let fa = be.producer("a");
         let fb = be.producer("b");
@@ -321,7 +320,7 @@ mod tests {
         drop(be);
         let metrics: SharedMetrics = Arc::new(NoopMetrics);
         let nm = NodeMetrics::bind(&metrics, "j", NodeKind::Join);
-        let (handle, inspector) = mpsc::channel::<Query>(4);
+        let (inspect, handle, _events) = Inspect::channel();
         let ids = vec!["a".to_string(), "b".to_string()];
         let spec = Spec {
             id: "j".into(),
@@ -329,7 +328,7 @@ mod tests {
             name: None,
             value: Some("a + b".into()),
         };
-        tokio::spawn(run(spec, rxs, tx, nm, Some(inspector)));
+        tokio::spawn(run(spec, rxs, tx, nm, Some(inspect)));
 
         // Only input `a` arrives for checkout [0,60): the bucket stays open, waiting on `b`.
         // With no `b` record, the watermark stays 0, so nothing is evicted.

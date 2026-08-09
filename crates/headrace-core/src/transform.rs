@@ -13,7 +13,7 @@ mod window;
 pub use window::Window;
 
 use crate::backend::{Consumer, Producer};
-use crate::inspect::Inspector;
+use crate::inspect::Inspect;
 use crate::metrics::NodeMetrics;
 use anyhow::{Result, bail};
 use headrace_ir::Transform;
@@ -26,7 +26,7 @@ pub async fn run(
     rxs: Vec<Box<dyn Consumer>>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
-    inspect: Option<Inspector>,
+    inspect: Option<Inspect>,
 ) -> Result<()> {
     match t {
         Transform::Filter { key, equals, .. } => filter::run(key, equals, one(rxs), tx, nm).await,

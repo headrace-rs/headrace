@@ -273,7 +273,7 @@ pub async fn run(
             None
         };
         #[cfg(not(feature = "inspect"))]
-        let inspect: Option<crate::inspect::Inspector> = None;
+        let inspect: Option<crate::inspect::Inspect> = None;
         work.spawn(async move {
             let r = transform::run(op, rxs, tx, nm, inspect).await;
             record_error(&r, &node);

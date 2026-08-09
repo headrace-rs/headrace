@@ -4,11 +4,14 @@
 //! Read-only and unauthenticated - meant for a trusted admin network (localhost, a debug
 //! sidecar), so it is opt-in behind `--inspect-addr` and binds its own port.
 
-use super::{GroupSnapshot, Registry};
+use super::{GroupSnapshot, NodeSnapshot, Registry};
 use headrace_proto::v1::state_server::{State, StateServer};
-use headrace_proto::v1::{GetRequest, GetResponse, GroupState, NodeState};
+use headrace_proto::v1::{GetRequest, GetResponse, GroupState, NodeState, WatchRequest};
 use std::net::SocketAddr;
-use tokio::sync::oneshot;
+use std::pin::Pin;
+use tokio::sync::{broadcast, oneshot};
+use tokio_stream::Stream;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
 /// Serves [`Registry`] snapshots over the `State` service.
@@ -30,14 +33,57 @@ impl State for StateService {
         for id in ids {
             // A requested-but-unknown or already-exited node is simply omitted.
             if let Some(snap) = self.registry.query(&id).await {
-                nodes.push(NodeState {
-                    id,
-                    kind: snap.kind.to_string(),
-                    groups: snap.groups.into_iter().map(Into::into).collect(),
-                });
+                nodes.push(node_state(id, snap));
             }
         }
         Ok(Response::new(GetResponse { nodes }))
+    }
+
+    type WatchStream = Pin<Box<dyn Stream<Item = Result<NodeState, Status>> + Send>>;
+
+    /// Stream each watched node's snapshot as its state changes. One forwarder task per node
+    /// bridges the node's broadcast of change events into a single response stream; a node
+    /// that falls behind the buffer resumes from the latest, and an unknown node is dropped.
+    async fn watch(
+        &self,
+        request: Request<WatchRequest>,
+    ) -> Result<Response<Self::WatchStream>, Status> {
+        let want = request.into_inner().node;
+        let ids = if want.is_empty() {
+            self.registry.ids()
+        } else {
+            want
+        };
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<NodeState, Status>>(64);
+        for id in ids {
+            let Some(mut events) = self.registry.subscribe(&id) else {
+                continue;
+            };
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                loop {
+                    match events.recv().await {
+                        Ok(snap) => {
+                            if tx.send(Ok(node_state(id.clone(), snap))).await.is_err() {
+                                break; // the client hung up
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => {} // resume from latest
+                        Err(broadcast::error::RecvError::Closed) => break, // the node exited
+                    }
+                }
+            });
+        }
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
+    }
+}
+
+/// Map a node's snapshot onto the wire type, tagged with its registry id.
+fn node_state(id: String, snap: NodeSnapshot) -> NodeState {
+    NodeState {
+        id,
+        kind: snap.kind.to_string(),
+        groups: snap.groups.into_iter().map(Into::into).collect(),
     }
 }
 

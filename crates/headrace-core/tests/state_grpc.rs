@@ -81,6 +81,63 @@ async fn state_get_reports_live_window_state() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn watch_streams_window_state_as_it_changes() {
+    use headrace_proto::v1::WatchRequest;
+
+    let addr = free_addr();
+    let p: Pipeline = serde_yaml::from_str(
+        r#"
+        sources: [{ type: generator, id: gen, interval: 1ms }]
+        transforms:
+          - { type: window, id: w, input: gen, size: 1h,
+              group_by: [service.name], aggregate: { op: count } }
+        sinks: [{ type: stdout, id: out, input: w, format: json }]
+        "#,
+    )
+    .expect("valid pipeline");
+    let metrics: SharedMetrics = Arc::new(NoopMetrics);
+    let opts = RunOptions {
+        inspect_addr: Some(addr),
+    };
+    let run = tokio::spawn(headrace_core::run(p, InProcess::default(), metrics, opts));
+
+    // Connect once the server is up, then open a Watch stream.
+    let endpoint = format!("http://{addr}");
+    let mut client = None;
+    for _ in 0..200 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        if let Ok(c) = StateClient::connect(endpoint.clone()).await {
+            client = Some(c);
+            break;
+        }
+    }
+    let mut stream = client
+        .expect("server came up")
+        .watch(WatchRequest { node: vec![] })
+        .await
+        .expect("watch opens")
+        .into_inner();
+
+    // The generator keeps folding records, so the window publishes a change event per record.
+    let event = tokio::time::timeout(Duration::from_secs(5), stream.message())
+        .await
+        .expect("a watch event arrives within 5s")
+        .expect("stream is not errored")
+        .expect("stream yields a node state");
+    assert_eq!(event.id, "w");
+    assert_eq!(event.kind, "window");
+    assert!(
+        event
+            .groups
+            .iter()
+            .any(|g| g.labels.contains_key("service.name")),
+        "the streamed snapshot carries labelled groups"
+    );
+
+    run.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn graceful_shutdown_stops_serving() {
     use headrace_core::inspect::{Registry, server};
 

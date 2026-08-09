@@ -10,12 +10,18 @@ service State {
   // stateful node on this worker.
   rpc Get(GetRequest) returns (GetResponse);
 
-  // Watch is a planned follow-up: server-streamed snapshots on flush/eviction.
-  // rpc Watch(WatchRequest) returns (stream NodeState);
+  // Stream a node's snapshot each time its state changes (a record folds, a window fires,
+  // a join bucket completes or is evicted). One NodeState per change, per watched node.
+  rpc Watch(WatchRequest) returns (stream NodeState);
 }
 
 message GetRequest {
   // Node ids to snapshot; empty = all stateful nodes.
+  repeated string node = 1;
+}
+
+message WatchRequest {
+  // Node ids to watch; empty = all stateful nodes.
   repeated string node = 1;
 }
 

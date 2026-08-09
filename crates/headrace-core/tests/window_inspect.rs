@@ -3,7 +3,7 @@
 //! exercises the async driver's inspect arm, which the pure-`Window` unit tests don't.
 
 use headrace_core::backend::{Backend, InProcess};
-use headrace_core::inspect::{NodeSnapshot, Query};
+use headrace_core::inspect::{Inspect, NodeSnapshot, Query};
 use headrace_core::metrics::{NodeKind, NodeMetrics};
 use headrace_core::record::{Attrs, Record};
 use headrace_core::{NoopMetrics, SharedMetrics};
@@ -24,7 +24,7 @@ async fn window_answers_a_query_from_its_own_loop() {
 
     let m: SharedMetrics = Arc::new(NoopMetrics);
     let nm = NodeMetrics::bind(&m, "w", NodeKind::Window);
-    let (handle, inspector) = mpsc::channel::<Query>(4);
+    let (inspect, handle, _events) = Inspect::channel();
 
     // #[non_exhaustive]: build the transform through the parser, not a literal.
     let op: Transform =
@@ -35,7 +35,7 @@ async fn window_answers_a_query_from_its_own_loop() {
         vec![win_rx],
         win_tx,
         nm,
-        Some(inspector),
+        Some(inspect),
     ));
 
     // Three records in [0, 5s), then one at 6s that advances the watermark and fires it.

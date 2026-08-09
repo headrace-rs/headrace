@@ -5,7 +5,7 @@
 //! that owns only I/O.
 
 use crate::backend::{Consumer, Producer};
-use crate::inspect::{GroupSnapshot, Inspector, NodeSnapshot, labels_of, recv_query};
+use crate::inspect::{GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish, recv_query};
 use crate::metrics::NodeMetrics;
 use crate::record::{AttrValue, Attrs, Fault, Record};
 use anyhow::{Result, bail};
@@ -327,7 +327,7 @@ pub(super) async fn run(
     mut rx: Box<dyn Consumer>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
-    mut inspect: Option<Inspector>,
+    mut inspect: Option<Inspect>,
 ) -> Result<()> {
     let Spec {
         size,
@@ -369,6 +369,7 @@ pub(super) async fn run(
                     if !emit(win.drain_ready(), tx.as_ref(), &nm).await {
                         return Ok(());
                     }
+                    publish(&inspect, || win.snapshot());
                 }
                 None => break,
             },
@@ -377,6 +378,7 @@ pub(super) async fn run(
                 if !emit(win.drain_all(), tx.as_ref(), &nm).await {
                     return Ok(());
                 }
+                publish(&inspect, || win.snapshot());
             }
             // Fires only when inspection is on; answers a snapshot query from the node's
             // own loop, so the reply is consistent with the folds above.

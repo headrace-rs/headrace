@@ -518,6 +518,7 @@ dependencies = [
  "serde_yaml",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-reflection",
  "tracing",

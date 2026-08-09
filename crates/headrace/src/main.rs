@@ -60,6 +60,9 @@ enum Cmd {
         /// Restrict to these node ids (repeatable); omit for all stateful nodes.
         #[arg(long = "node", value_name = "ID")]
         node: Vec<String>,
+        /// Stream snapshots as state changes, instead of a one-shot query. Ctrl-C to stop.
+        #[arg(long)]
+        watch: bool,
     },
 }
 
@@ -94,24 +97,36 @@ async fn main() -> Result<()> {
             println!("{}", headrace_ir::json_schema());
             Ok(())
         }
-        Cmd::Inspect { addr, node } => inspect(addr, node).await,
+        Cmd::Inspect { addr, node, watch } => inspect(addr, node, watch).await,
     }
 }
 
-/// Query the `State` server at `addr` and print each node's open groups. `node` restricts
-/// the query; empty asks for all stateful nodes.
-async fn inspect(addr: SocketAddr, node: Vec<String>) -> Result<()> {
-    use headrace_proto::v1::GetRequest;
+/// Query the `State` server at `addr` and print each node's open groups. `node` restricts to
+/// specific ids; empty asks for all stateful nodes. With `watch`, stream snapshots as node
+/// state changes until interrupted.
+async fn inspect(addr: SocketAddr, node: Vec<String>, watch: bool) -> Result<()> {
     use headrace_proto::v1::state_client::StateClient;
+    use headrace_proto::v1::{GetRequest, WatchRequest};
 
     let mut client = StateClient::connect(format!("http://{addr}"))
         .await
         .with_context(|| format!("connecting to the state server at {addr}"))?;
-    let resp = client
-        .get(GetRequest { node })
-        .await
-        .context("State.Get request failed")?;
-    print!("{}", render(&resp.into_inner().nodes));
+    if watch {
+        let mut stream = client
+            .watch(WatchRequest { node })
+            .await
+            .context("State.Watch request failed")?
+            .into_inner();
+        while let Some(node) = stream.message().await.context("watch stream error")? {
+            print!("{}", render(std::slice::from_ref(&node)));
+        }
+    } else {
+        let resp = client
+            .get(GetRequest { node })
+            .await
+            .context("State.Get request failed")?;
+        print!("{}", render(&resp.into_inner().nodes));
+    }
     Ok(())
 }
 
