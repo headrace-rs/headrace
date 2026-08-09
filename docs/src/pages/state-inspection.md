@@ -66,13 +66,29 @@ in the snapshot.
 A snapshot is produced by the node's own task as it answers the query, so it is always
 consistent with the records the node has already processed - never a torn read.
 
+## Watch for changes
+
+`--watch` turns the one-shot query into a live stream: the server pushes a fresh snapshot of a
+node each time its state changes - a record folds in, a window fires, a join bucket completes
+or is evicted - until you interrupt it.
+
+```sh
+headrace inspect 127.0.0.1:4318 --watch
+headrace inspect 127.0.0.1:4318 --watch --node spread
+```
+
+Each update prints the same block as a `Get`, so you can watch a window's `samples` climb or a
+join bucket fill in real time. A watcher that falls behind skips to the latest snapshot rather
+than slowing the pipeline down.
+
 ## The gRPC API
 
-The service is `headrace.v1.State` with a unary `Get`:
+The service is `headrace.v1.State`:
 
 ```proto
 service State {
-  rpc Get(GetRequest) returns (GetResponse);   // GetRequest { repeated string node }
+  rpc Get(GetRequest) returns (GetResponse);           // GetRequest   { repeated string node }
+  rpc Watch(WatchRequest) returns (stream NodeState);  // WatchRequest { repeated string node }
 }
 ```
 
@@ -82,6 +98,7 @@ running pipeline without a local `.proto`:
 ```sh
 grpcurl -plaintext 127.0.0.1:4318 headrace.v1.State/Get
 grpcurl -plaintext -d '{"node":["hi"]}' 127.0.0.1:4318 headrace.v1.State/Get
+grpcurl -plaintext 127.0.0.1:4318 headrace.v1.State/Watch   # streams until interrupted
 ```
 
 ## Scope

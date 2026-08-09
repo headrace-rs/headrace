@@ -43,13 +43,14 @@ Print the pipeline IR as a JSON Schema - the contract for editors and code gener
 ### inspect
 
 ```sh
-headrace inspect <addr> [--node ID]...
+headrace inspect <addr> [--node ID]... [--watch]
 ```
 
 Query a running pipeline's live state (it must have been started with `run --inspect-addr`).
 Prints each stateful node's open groups - labels, window bounds, current value, and sample
 count. `--node` restricts the query to specific ids and repeats; omit it for all stateful
-nodes.
+nodes. `--watch` streams snapshots as state changes, instead of a one-shot query, until
+Ctrl-C. See [State inspection](/state-inspection) for the full guide.
 
 ## Global flags
 
