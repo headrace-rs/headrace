@@ -48,6 +48,8 @@ button[data-single-line="true"][class]{top:.625rem!important;translate:none!impo
     { text: 'Overview', link: '/' },
     { text: 'Install', link: '/install' },
     { text: 'Getting started', link: '/getting-started' },
+    { text: 'Concepts', link: '/concepts' },
+    { text: 'Sources', link: '/sources' },
     {
       text: 'Transforms',
       collapsed: false,
@@ -58,5 +60,15 @@ button[data-single-line="true"][class]{top:.625rem!important;translate:none!impo
         { text: 'Join', link: '/transforms/join' },
       ],
     },
+    { text: 'Sinks', link: '/sinks' },
+    {
+      text: 'Reference',
+      collapsed: false,
+      items: [
+        { text: 'CLI', link: '/reference/cli' },
+        { text: 'Self-metrics', link: '/reference/metrics' },
+      ],
+    },
+    { text: 'Troubleshooting', link: '/troubleshooting' },
   ],
 })
