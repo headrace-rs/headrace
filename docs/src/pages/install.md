@@ -48,8 +48,8 @@ straight to `headrace` (`run`, `validate`, `--metrics otlp`, ...).
 
 ## Kubernetes
 
-The chart ships beside the image on GHCR. Its default pipeline receives OTLP, rolls up a
-60s average per service, and prints JSON rollups to stdout:
+The chart ships beside the image on GHCR. Its default pipeline receives OTLP, averages each
+service over 60s windows, and prints the aggregates as JSON to stdout:
 
 ```sh
 helm install headrace oci://ghcr.io/headrace-rs/charts/headrace
@@ -65,13 +65,13 @@ pipeline:
     - { type: otlp, id: in, listen: 0.0.0.0:4317 }
   transforms:
     - type: window
-      id: rollup
+      id: windowed
       input: in
       size: 60s
       group_by: [service.name]
       aggregate: { op: avg, field: value }
   sinks:
-    - { type: otlp, id: out, input: rollup, endpoint: http://collector:4317 }
+    - { type: otlp, id: out, input: windowed, endpoint: http://collector:4317 }
 ```
 
 ```sh

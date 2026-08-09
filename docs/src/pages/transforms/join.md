@@ -57,7 +57,8 @@ join:      [0,5s): hi=214, lo=190 -> emit    [5s,10s): hi=250, lo=210 -> emit
 ## Scaling
 
 The alignment key is also the backend partition key, so every input's records for a given key
-hash to the same worker: the join's buffered state stays local, no shuffle (ADR-0007, ADR-0012).
+land on the same worker: the join's buffered state stays local, with nothing moved between
+workers (ADR-0007, ADR-0012).
 
 ## Validation
 

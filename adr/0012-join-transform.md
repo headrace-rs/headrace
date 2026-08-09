@@ -37,7 +37,7 @@ We will add a `join` fan-in transform:
   (validated).
 - **Co-partitioning.** The alignment key is the backend partition key, so all inputs' records for a
   key land on one worker and the join's buffered state stays local (ADR-0007). This holds because
-  the inputs share `group_by`; no shuffle is added.
+  the inputs share `group_by`; no cross-worker routing is added.
 - **Non-windowed "signal" join** (align on key only, keeping each input's last value) is a later
   mode: it needs a staleness TTL and an emit-trigger policy (ADR-0009).
 
@@ -73,5 +73,5 @@ richer attribute reshaping (rename/set/drop) remains the `relabel` transform (AD
   entries can leak downstream on the align-only path until the inline `value` drops them or a
   `relabel`/`wasm` does.
 - Non-math combines compose after an align-only join, so join never becomes a dead-end.
-- Distributed joins are local rather than a shuffle, because the alignment key is the partition
+- Distributed joins are local, not cross-worker, because the alignment key is the partition
   key.

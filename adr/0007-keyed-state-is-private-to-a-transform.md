@@ -26,7 +26,8 @@ Large reference data lives in an external lookup, outside the state model.
 ## Consequences
 
 - The one-key, one-worker, local-state invariant holds, so scaling stays tractable.
-- Cross-stream combination is explicit: a join declares its co-partitioning (a shuffle), and
-  broadcast state declares a bounded, replicated table.
+- Cross-stream combination is explicit: a join declares its co-partitioning (its inputs share a
+  key, so their records route to the same worker), and broadcast state declares a bounded,
+  replicated table.
 - There are no general cross-transform state references; cases that seem to want them are
   expressed as a join or broadcast, or pushed to an external store.

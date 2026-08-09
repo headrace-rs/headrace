@@ -67,7 +67,7 @@ flowchart TB
 Stateful scaling means partitioning the keyspace so every record for a `group_key` reaches the
 same worker, where its window state stays local. Headrace does not build that machinery:
 
-- **Partition assignment and shuffle** -> the backend.
+- **Partition assignment and record routing** -> the backend.
 - **Pod lifecycle** -> Kubernetes (Deployment / StatefulSet).
 - **Autoscaling** -> KEDA on backend lag.
 
@@ -77,9 +77,9 @@ pipeline IR, idempotently at startup: the streams, the partitioned subjects, and
 consumers. You do not hand-create subjects. For locked-down environments, an admin can pre-create
 the streams and give Headrace permission only to bind to them.
 
-**Two edges, not one.** The backend is the *internal* edge between nodes, the shuffle that carries
-a group's records to its worker. OTLP is the *external* edge, how telemetry gets in and results
-get out. You feed data through OTLP, not through the backend.
+**Two edges, not one.** The backend is the *internal* edge between nodes: it routes each group's
+records to the worker that owns them. OTLP is the *external* edge, how telemetry gets in and
+results get out. You feed data through OTLP, not through the backend.
 
 The `Backend` trait is the boundary (`crates/headrace-core/src/backend.rs`):
 `producer(id) -> Box<dyn Producer>` and `consumer(id) -> Box<dyn Consumer>`, where
@@ -123,7 +123,7 @@ out of scope.
 What the windowing transforms keep, and how it stays correct under scale and failure.
 
 **Keyed on.** State is keyed by `(transform_id, group_key, window)`, where `group_key` is the
-`group_by` tuple. That same key is the shuffle partition key (`Backend::Key` bytes), so a group's
+`group_by` tuple. That same key is the backend partition key (`Backend::Key` bytes), so a group's
 records, and therefore its state, always land on one worker.
 
 **Time is event time.** Windows are placed by the record's own `ts_nanos` (OTel `TimeUnixNano`),
@@ -176,7 +176,8 @@ over that state is a possible later step.
 
 **Persistence has two distinct roles**, both satisfiable by JetStream:
 
-1. *Shuffle transport* - the partitioned subject/stream between ingress and workers.
+1. *Record routing* - the partitioned subject/stream that carries records between ingress and
+   workers.
 2. *State changelog* - every mutation also appended to a **compacted** stream keyed by the state
    key; on crash or rebalance the new partition owner replays it to rebuild state before resuming.
    When keyed state outgrows RAM, back it with **RocksDB** (spill to disk).

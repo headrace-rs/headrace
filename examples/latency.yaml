@@ -1,4 +1,4 @@
-# Roll up p-less average request latency per service+route in 5s windows.
+# Average request latency per service+route in 5s windows.
 # Run: cargo run -p headrace -- run examples/latency.yaml
 version: 0
 
@@ -18,7 +18,7 @@ transforms:
     equals: checkout
 
   - type: window
-    id: rollup
+    id: windowed
     input: only_checkout
     size: 5s
     group_by: [service.name, http.route]
@@ -29,5 +29,5 @@ transforms:
 sinks:
   - type: stdout
     id: out
-    input: rollup
+    input: windowed
     format: text

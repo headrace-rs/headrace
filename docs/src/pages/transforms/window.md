@@ -8,7 +8,7 @@ showAskAi: false
 
 The `window` transform groups records by `group_by` and reduces each group over a time
 window. Windows are placed in **event time** - each record's own `ts_nanos` (OTel
-`TimeUnixNano`), not the wall clock - so rollups stay correct under lag, batching, and
+`TimeUnixNano`), not the wall clock - so the aggregates stay correct under lag, batching, and
 replay.
 
 ## Watermark
@@ -86,7 +86,7 @@ still flushes open windows regardless.
 ```yaml
 transforms:
   - type: window
-    id: rollup
+    id: windowed
     input: in
     name: "req.latency.avg"  # optional: rename the emitted metric
     size: 5s                 # required: window length
