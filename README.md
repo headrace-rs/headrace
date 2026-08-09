@@ -8,25 +8,33 @@
 [![Coverage](https://img.shields.io/codecov/c/github/headrace-rs/headrace/main?style=flat-square)](https://codecov.io/gh/headrace-rs/headrace)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](./LICENSE)
 
-OTel-native, stateful stream processing in a single Rust binary. Point telemetry at it,
-define aggregations declaratively, emit to any backend. Runs in-process for dev/edge or
-scales on Kubernetes over a partitioned backend.
+OTel-native, stateful stream processing in a single Rust binary. Point OpenTelemetry at it,
+declare aggregations in YAML, and forward the aggregated metrics to any backend - not every
+datapoint. Runs in-process for dev and the edge, or scales on Kubernetes over a partitioned
+backend.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/pipeline-dark.svg">
   <img src="./docs/assets/pipeline.svg" alt="headrace pipeline: sources through stateful transforms to sinks" width="100%">
 </picture>
 
-See [DESIGN.md](./DESIGN.md).
+## Quickstart
 
-## Try it
+Run the bundled example - a generator feeding a filter and a 5s window, printing aggregates
+to stdout:
 
 ```sh
-cargo run -p headrace -- run examples/latency.yaml   # generator -> filter -> 5s window -> stdout
-cargo run -p headrace -- validate examples/latency.yaml
-cargo run -p headrace -- schema                       # IR JSON Schema
-cargo run -p headrace -- --metrics otlp run examples/latency.yaml   # export headrace's own metrics
+cargo run -p headrace -- run examples/latency.yaml
 ```
+
+Validate a pipeline, or print the IR JSON Schema:
+
+```sh
+cargo run -p headrace -- validate examples/latency.yaml
+cargo run -p headrace -- schema
+```
+
+For a release binary via source, Docker, or Helm, see [Install](https://headrace.rs/docs/install).
 
 ## Features
 
@@ -39,25 +47,27 @@ cargo run -p headrace -- --metrics otlp run examples/latency.yaml   # export hea
 | Backend | in-process (single binary) | NATS JetStream (partitioned, scaled) |
 | Deploy | Helm chart, OTLP `Record` cumulative-to-delta normalization | `Pipeline` CRD + operator |
 
-Windows are event-time with watermarks, `allowed_lateness`, and `idle_timeout` - see the
-[window](./docs/src/pages/transforms/window.md) guide. The `map` transform's numeric
-expression language is documented in [map](./docs/src/pages/transforms/map.md), and
-cross-series `join` in [join](./docs/src/pages/transforms/join.md).
+## Documentation
+
+Full docs at [headrace.rs/docs](https://headrace.rs/docs):
+
+- [Install](https://headrace.rs/docs/install) and [Getting started](https://headrace.rs/docs/getting-started)
+- [Concepts](https://headrace.rs/docs/concepts) - the pipeline graph, the record, event time, run modes
+- Pipeline nodes: [sources](https://headrace.rs/docs/sources), transforms
+  ([filter](https://headrace.rs/docs/transforms/filter),
+  [map](https://headrace.rs/docs/transforms/map),
+  [window](https://headrace.rs/docs/transforms/window),
+  [join](https://headrace.rs/docs/transforms/join)), [sinks](https://headrace.rs/docs/sinks)
+- Reference: [CLI](https://headrace.rs/docs/reference/cli),
+  [self-metrics](https://headrace.rs/docs/reference/metrics)
+- [Troubleshooting](https://headrace.rs/docs/troubleshooting)
+- [DESIGN.md](./DESIGN.md) - how it works, end to end
 
 ## Self-metrics
 
-Headrace exports its own telemetry over OTLP - the same protocol it processes. Off by
-default; enable with `--metrics otlp` (or `stdout` for debugging). Attributed by node
-`id` and `kind`.
-
-| Metric | Type | Meaning |
-|---|---|---|
-| `headrace.records.out` | counter | records a node emitted or forwarded |
-| `headrace.records.dropped` | counter | records dropped (filtered, or missing aggregate field) |
-| `headrace.records.late` | counter | records dropped as too late (their window had already fired) |
-| `headrace.window.flushes` | counter | window flush events |
-| `headrace.window.groups` | histogram | aggregate groups emitted per flush |
-| `headrace.node.errors` | counter | node tasks that terminated with an error |
+Headrace exports its own telemetry over OTLP - the same protocol it processes - attributed by
+`node` and `kind`. Off by default; enable with `--metrics otlp` (or `stdout` for debugging).
+See [self-metrics](https://headrace.rs/docs/reference/metrics) for the full instrument list.
 
 ## Status
 
@@ -69,10 +79,10 @@ watermarks and `allowed_lateness`, and a Helm chart.
 Roadmap (details in [DESIGN.md](./DESIGN.md#roadmap)) - core processing first, on the
 in-process backend and deployable in a real cluster, before a distributed backend:
 
-- **v0.2 - deployable core**: OTLP in/out ✓, Helm chart + GHCR ✓, event-time windows +
-  watermarks ✓, sliding windows.
+- **v0.2 - deployable core**: OTLP in/out, Helm chart + GHCR, event-time windows +
+  watermarks, sliding windows.
 - **v0.3 - richer transforms**: `map`, `join`, local state inspection.
-- **v0.4 - scale & extend**: NATS JetStream backend, WASM transform, docs site.
+- **v0.4 - scale & extend**: NATS JetStream backend, WASM transform.
 - **v0.5+**: state checkpointing + interactive queries, MCP authoring server, `Pipeline`
   CRD + operator, session windows.
 
