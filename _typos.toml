@@ -3,7 +3,13 @@
 [default.extend-words]
 PN = "PN"
 
-# Vendored, minified Prism build: its packed regex source trips false positives
-# (e.g. `lang(?:uage)?` -> `lang(?:usage)?`). Never rewrite third-party assets.
+# Vendored/generated web assets: minified third-party bundles and a recorded
+# terminal cast. Their packed contents trip false positives (e.g. Prism's
+# `lang(?:uage)?` -> `lang(?:usage)?`); never rewrite them.
 [files]
-extend-exclude = ["site/prism.js"]
+extend-exclude = [
+  "site/prism.js",
+  "site/asciinema-player.min.js",
+  "site/asciinema-player.css",
+  "site/demo.cast",
+]

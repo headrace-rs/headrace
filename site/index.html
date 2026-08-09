@@ -7,7 +7,9 @@
   <meta name="description" content="OTel-native, stateful stream processing in a single Rust binary. Point OTLP at it, define aggregations declaratively, emit to any backend." />
   <link rel="icon" href="/favicon.svg" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/asciinema-player.css" />
   <script src="/prism.js" defer></script>
+  <script src="/asciinema-player.min.js" defer></script>
   <script>
     // Apply saved / URL-forced theme before paint (no flash). Defaults to system.
     (function () {
@@ -47,52 +49,64 @@
     <section class="hero">
       <h1>Pre-aggregate telemetry. <span class="accent">Ship less</span> to your vendor.</h1>
       <p class="sub">
-        Run stateful, event-time aggregations over OpenTelemetry and forward the rollups to
-        your backend, not every datapoint. One Rust binary: in-process at the edge, or scaled
-        across your cluster over a partitioned backend.
+        Run stateful, event-time aggregations over OpenTelemetry and forward the aggregated
+        metrics to your backend, not every datapoint. One Rust binary: in-process at the edge,
+        or scaled across your cluster over a partitioned backend.
       </p>
       <div class="cta-row">
         <a class="btn" href="/docs">Get started →</a>
         <a class="btn-ghost" href="https://github.com/headrace-rs/headrace">View on GitHub</a>
       </div>
+      <p class="hero-run"><span class="p">$</span> docker run -v $(pwd):/data ghcr.io/headrace-rs/headrace run /data/pipeline.yaml</p>
     </section>
 
-    <section class="diagram">
-      <img class="t-light" src="/pipeline.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
-      <img class="t-dark" src="/pipeline-dark.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
-    </section>
-
-    <section class="features">
-      <div class="feat">
-        <h3>Ship less downstream</h3>
-        <p>Emit windowed rollups instead of every datapoint. Your observability bill tracks signal, not raw volume.</p>
-      </div>
-      <div class="feat">
-        <h3>Event-time windows</h3>
-        <p>Watermarks, allowed lateness, tumbling and sliding. Correct under late and out-of-order data.</p>
-      </div>
-      <div class="feat">
-        <h3>Edge or cloud, one binary</h3>
-        <p>Run in-process for dev and the edge, or scale it across a cluster over a partitioned backend. OTLP in and out, either way.</p>
+    <section class="sec sec-alt">
+      <div class="howit">
+        <div class="howit-head">
+          <h2>How it works</h2>
+          <p>Point OpenTelemetry at it, declare your transforms in YAML, and emit anywhere. Sources feed stateful transforms feed sinks - one binary, one file.</p>
+        </div>
+        <div class="diagram">
+          <img class="t-light" src="/pipeline.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
+          <img class="t-dark" src="/pipeline-dark.svg" alt="headrace pipeline: sources through stateful transforms to sinks" />
+        </div>
       </div>
     </section>
 
-    <section class="show">
-      <div class="show-copy">
-        <h2>A pipeline is a YAML file</h2>
-        <p>Declare sources, transforms, and sinks. <code>headrace validate</code> checks it before it runs, and the same file runs in-process or scaled.</p>
-        <div class="run"><span class="p">$</span> headrace run pipeline.yaml</div>
+    <section class="sec">
+      <div class="features">
+        <div class="feat">
+          <h3>Ship less downstream</h3>
+          <p>Emit a handful of windowed aggregates instead of thousands of raw datapoints. Your bill tracks signal, not volume.</p>
+        </div>
+        <div class="feat">
+          <h3>Event-time windows</h3>
+          <p>Watermarks, allowed lateness, tumbling and sliding. Correct under late and out-of-order data.</p>
+        </div>
+        <div class="feat">
+          <h3>Edge or cloud, one binary</h3>
+          <p>Run in-process for dev and the edge, or scale it across a cluster over a partitioned backend. OTLP in and out, either way.</p>
+        </div>
       </div>
-      <div class="code-card">
-        <div class="code-head">pipeline.yaml</div>
-        <pre><code class="language-yaml">sources:
+    </section>
+
+    <section class="sec sec-alt">
+      <div class="show">
+        <div class="show-copy">
+          <h2>A pipeline is a YAML file</h2>
+          <p>Declare sources, transforms, and sinks. <code>headrace validate</code> checks it before it runs, and the same file runs in-process or scaled.</p>
+          <div class="run"><span class="p">$</span> headrace run pipeline.yaml</div>
+        </div>
+        <div class="code-card">
+          <div class="termbar"><i class="r"></i><i class="y"></i><i class="g"></i><span>pipeline.yaml</span></div>
+          <pre><code class="language-yaml">sources:
   - type: otlp
     id: in
     listen: 0.0.0.0:4317
 
 transforms:
   - type: window
-    id: rollup
+    id: windowed
     input: in
     size: 5s
     group_by: [service.name, http.route]
@@ -102,19 +116,36 @@ transforms:
 sinks:
   - type: otlp
     id: out
-    input: rollup
+    input: windowed
     endpoint: http://collector:4317</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="demo">
+        <div class="term">
+          <div class="termbar"><i class="r"></i><i class="y"></i><i class="g"></i><span>headrace</span></div>
+          <div id="player"></div>
+        </div>
+        <div class="demo-copy">
+          <h2>See it run</h2>
+          <p>One command, one binary. A generator feeds a filter and a 5s window; every 5 seconds headrace emits the average request latency per route.</p>
+          <div class="run"><span class="p">$</span> headrace run examples/latency.yaml</div>
+        </div>
       </div>
     </section>
   </main>
 
-  <footer class="foot">
-    <span class="foot-meta"><span class="crab">🦀</span> Built in Rust · Apache-2.0 · Hosted on Cloudflare</span>
-    <nav class="fl">
-      <a href="/docs">Docs</a>
-      <a href="https://github.com/headrace-rs/headrace">GitHub</a>
-      <a href="https://crates.io/crates/headrace">crates.io</a>
-    </nav>
+  <footer class="sec sec-alt">
+    <div class="foot">
+      <span class="foot-meta"><span class="crab">🦀</span> Built in Rust · Apache-2.0 · Hosted on Cloudflare</span>
+      <nav class="fl">
+        <a href="/docs">Docs</a>
+        <a href="https://github.com/headrace-rs/headrace">GitHub</a>
+        <a href="https://crates.io/crates/headrace">crates.io</a>
+      </nav>
+    </div>
   </footer>
 
   <script>
@@ -125,6 +156,15 @@ sinks:
       var next = cur === "dark" ? "light" : "dark";
       localStorage.setItem("hr-theme", next);
       root.setAttribute("data-theme", next);
+    });
+  </script>
+  <script>
+    // Player script is deferred; init once it and the DOM are ready.
+    window.addEventListener("load", function () {
+      if (!window.AsciinemaPlayer) return;
+      AsciinemaPlayer.create("/demo.cast", document.getElementById("player"), {
+        autoPlay: true, loop: true, poster: "npt:0:7", fit: "width", terminalFontSize: "12px",
+      });
     });
   </script>
 </body>
