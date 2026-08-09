@@ -63,7 +63,15 @@ pub async fn run(
             inputs,
             name,
             value,
-        } => join::run(id, inputs, name, value, rxs, tx, nm).await,
+        } => {
+            let spec = join::Spec {
+                id,
+                inputs,
+                name,
+                value,
+            };
+            join::run(spec, rxs, tx, nm, inspect).await
+        }
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
     }

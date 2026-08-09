@@ -11,10 +11,11 @@
 
 use super::expr::Expr;
 use crate::backend::{Consumer, Producer};
+use crate::inspect::{GroupSnapshot, Inspector, NodeSnapshot, labels_of, recv_query};
 use crate::metrics::NodeMetrics;
 use crate::record::{AttrValue, Attrs, Record};
 use anyhow::{Result, anyhow};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 struct Bucket {
     start: u64,
@@ -26,15 +27,27 @@ struct Bucket {
     filled: usize,
 }
 
+/// The join transform's settings, parsed from the IR node.
+pub(super) struct Spec {
+    pub id: String,
+    pub inputs: Vec<String>,
+    pub name: Option<String>,
+    pub value: Option<String>,
+}
+
 pub(super) async fn run(
-    id: String,
-    inputs: Vec<String>,
-    name: Option<String>,
-    value: Option<String>,
+    spec: Spec,
     rxs: Vec<Box<dyn Consumer>>,
     tx: Box<dyn Producer>,
     nm: NodeMetrics,
+    mut inspect: Option<Inspector>,
 ) -> Result<()> {
+    let Spec {
+        id,
+        inputs,
+        name,
+        value,
+    } = spec;
     let expr = match &value {
         Some(v) => Some(Expr::parse(v).map_err(|e| anyhow!("invalid join expression: {}", e.0))?),
         None => None,
@@ -60,7 +73,22 @@ pub(super) async fn run(
     let mut buckets: HashMap<String, Bucket> = HashMap::new();
     let mut max_end = vec![0u64; n];
 
-    while let Some((i, rec)) = merged_rx.recv().await {
+    loop {
+        let (i, rec) = tokio::select! {
+            maybe = merged_rx.recv() => match maybe {
+                Some(item) => item,
+                None => break,
+            },
+            // Answer an inspect query from the node's own loop, so the snapshot is
+            // consistent with the buckets folded above.
+            query = recv_query(&mut inspect) => {
+                match query {
+                    Some(reply) => { let _ = reply.send(snapshot(&buckets, &inputs)); }
+                    None => inspect = None, // every Handle dropped; stop polling
+                }
+                continue;
+            }
+        };
         let start = rec.start_ts_nanos.unwrap_or(rec.ts_nanos);
         let end = rec.ts_nanos;
         max_end[i] = max_end[i].max(end);
@@ -104,6 +132,33 @@ pub(super) async fn run(
         }
     }
     Ok(())
+}
+
+/// A read-only view of the open (incomplete, not-yet-fired) buckets, for state inspection
+/// (ADR-0014). Each reports the per-input values filled so far; a join bucket has no single
+/// `value` until it completes and fires, and `samples` is how many of its inputs have arrived.
+fn snapshot(buckets: &HashMap<String, Bucket>, inputs: &[String]) -> NodeSnapshot {
+    let mut groups = Vec::new();
+    for b in buckets.values() {
+        let mut filled = BTreeMap::new();
+        for (id, v) in inputs.iter().zip(&b.values) {
+            if let Some(v) = v {
+                filled.insert(id.clone(), *v);
+            }
+        }
+        groups.push(GroupSnapshot {
+            labels: labels_of(&b.labels),
+            start_nanos: b.start,
+            end_nanos: b.end,
+            value: None,
+            inputs: filled,
+            samples: b.filled as u64,
+        });
+    }
+    NodeSnapshot {
+        kind: "join",
+        groups,
+    }
 }
 
 /// Build the output record for a complete bucket. With an expression, evaluate it against
@@ -252,6 +307,81 @@ mod tests {
         assert!(out.recv().await.is_none());
     }
 
+    #[tokio::test]
+    async fn snapshot_reports_incomplete_buckets() {
+        use crate::inspect::Query;
+        use tokio::sync::mpsc;
+
+        let mut be = InProcess::new(64);
+        let fa = be.producer("a");
+        let fb = be.producer("b");
+        let rxs = vec![be.consumer("a"), be.consumer("b")];
+        let tx = be.producer("out");
+        let mut out = be.consumer("out");
+        drop(be);
+        let metrics: SharedMetrics = Arc::new(NoopMetrics);
+        let nm = NodeMetrics::bind(&metrics, "j", NodeKind::Join);
+        let (handle, inspector) = mpsc::channel::<Query>(4);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let spec = Spec {
+            id: "j".into(),
+            inputs: ids,
+            name: None,
+            value: Some("a + b".into()),
+        };
+        tokio::spawn(run(spec, rxs, tx, nm, Some(inspector)));
+
+        // Only input `a` arrives for checkout [0,60): the bucket stays open, waiting on `b`.
+        // With no `b` record, the watermark stays 0, so nothing is evicted.
+        fa.send(None, wrec("checkout", 0, 60, 5.0)).await.unwrap();
+
+        // The record crosses two channels (per-input forwarder -> merged), so poll until the
+        // node's loop has folded it - race-free without guessing at timing.
+        let snap = poll(&handle, |s| s.groups.len() == 1).await;
+        assert_eq!(snap.kind, "join");
+        let g = &snap.groups[0];
+        assert_eq!((g.start_nanos, g.end_nanos), (0, 60));
+        assert_eq!(g.labels["service.name"], "checkout");
+        assert_eq!(g.value, None, "a bucket has no value until it fires");
+        assert_eq!(g.inputs.get("a"), Some(&5.0));
+        assert!(!g.inputs.contains_key("b"), "b has not arrived");
+        assert_eq!(g.samples, 1, "one of two inputs filled");
+
+        // `b` completes the bucket: it fires and leaves the open set. Reading the emitted
+        // record proves the loop removed the bucket, so the next snapshot is deterministic.
+        fb.send(None, wrec("checkout", 0, 60, 8.0)).await.unwrap();
+        assert_eq!(
+            out.recv().await.expect("the completed join fires").value,
+            13.0
+        );
+        let snap = query(&handle).await;
+        assert!(snap.groups.is_empty(), "a fired bucket leaves the snapshot");
+
+        drop((fa, fb));
+    }
+
+    /// Ask the join node for its current snapshot.
+    async fn query(handle: &tokio::sync::mpsc::Sender<crate::inspect::Query>) -> NodeSnapshot {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        handle.send(reply).await.expect("node is alive");
+        rx.await.expect("node replied")
+    }
+
+    /// Poll the snapshot until `done`, tolerating the forwarder-to-merged channel hop.
+    async fn poll(
+        handle: &tokio::sync::mpsc::Sender<crate::inspect::Query>,
+        done: impl Fn(&NodeSnapshot) -> bool,
+    ) -> NodeSnapshot {
+        for _ in 0..200 {
+            let snap = query(handle).await;
+            if done(&snap) {
+                return snap;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+        panic!("snapshot condition not met in time");
+    }
+
     fn setup(
         input_ids: &[&str],
         value: Option<&str>,
@@ -265,15 +395,13 @@ mod tests {
         let metrics: SharedMetrics = Arc::new(NoopMetrics);
         let nm = NodeMetrics::bind(&metrics, "j", NodeKind::Join);
         let ids: Vec<String> = input_ids.iter().map(|s| s.to_string()).collect();
-        tokio::spawn(run(
-            "j".to_string(),
-            ids,
-            None,
-            value.map(String::from),
-            rxs,
-            tx,
-            nm,
-        ));
+        let spec = Spec {
+            id: "j".to_string(),
+            inputs: ids,
+            name: None,
+            value: value.map(String::from),
+        };
+        tokio::spawn(run(spec, rxs, tx, nm, None));
         (feeders, out)
     }
 

@@ -362,11 +362,11 @@ fn record_error(result: &Result<()>, nm: &NodeMetrics) {
     }
 }
 
-/// Whether a transform holds state the `State` server can snapshot. Window today; join
-/// snapshots are a follow-up (ADR-0014).
+/// Whether a transform holds state the `State` server can snapshot: the two stateful
+/// transforms, `window` and `join` (ADR-0014).
 #[cfg(feature = "inspect")]
 fn is_inspectable(o: &Transform) -> bool {
-    matches!(o, Transform::Window { .. })
+    matches!(o, Transform::Window { .. } | Transform::Join { .. })
 }
 
 /// Start the state-inspection server if an address is configured and there is something to
