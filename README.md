@@ -74,7 +74,9 @@ See [self-metrics](https://headrace.rs/docs/reference/metrics) for the full inst
 v0.1 shipped the in-process pipeline: IR with static validation, `filter` and tumbling
 `window`, `generator`/`stdin` sources, `stdout` sinks, and OTel self-metrics. v0.2 has
 since added the OTLP source/sink (behind the `otlp` feature), event-time windows with
-watermarks and `allowed_lateness`, and a Helm chart.
+watermarks and `allowed_lateness`, and a Helm chart. v0.3 adds the `map` and `join`
+transforms and local state inspection - a `State` gRPC API (`Get` and streaming `Watch`)
+served by `run --inspect-addr`, with a `headrace inspect` client.
 
 Roadmap (details in [DESIGN.md](./DESIGN.md#roadmap)) - core processing first, on the
 in-process backend and deployable in a real cluster, before a distributed backend:

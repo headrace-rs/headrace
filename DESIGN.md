@@ -373,9 +373,10 @@ Branding and logo: done.
    `value` and fields) plus a co-partitioned join; together they unlock cross-series arithmetic
    like `a - b` (ADR-0010, ADR-0012). Join aligns windowed inputs on their shared `group_by` and
    window, and optionally reduces them with a `value` expression.
-2. **Local state inspection** - a read-only view of current accumulators per
-   `(transform_id, group_key, window)`, via a `/state` admin endpoint and a `headrace inspect`
-   command. Meaningful because every aggregate is a monoid (see *Stateful semantics*).
+2. **Local state inspection** *(done)* - a read-only view of each stateful node's open windows
+   and join buckets, via a `State` gRPC service (`Get` plus a streaming `Watch`) served on
+   `run --inspect-addr`, with a `headrace inspect` client (ADR-0014). Snapshots are pulled
+   through each node's own loop, so they never lock or tear against processing.
 
 **v0.4 - scale-out and extensibility**, in sequence:
 
