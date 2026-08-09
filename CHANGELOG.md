@@ -1,3 +1,10 @@
+## 0.1.13 (2026-08-09)
+
+### Features
+
+- snapshot join buckets on demand
+- stream state over the Watch RPC
+
 ## 0.1.12 (2026-08-07)
 
 ### Fixes
