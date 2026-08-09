@@ -61,6 +61,7 @@ button[data-single-line="true"][class]{top:.625rem!important;translate:none!impo
       ],
     },
     { text: 'Sinks', link: '/sinks' },
+    { text: 'State inspection', link: '/state-inspection' },
     {
       text: 'Reference',
       collapsed: false,
