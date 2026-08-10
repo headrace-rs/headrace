@@ -43,8 +43,17 @@ impl MetricsService for Service {
     }
 }
 
-/// Serve the OTLP metrics gRPC endpoint on `listen`, pushing each datapoint downstream as a Record.
-pub async fn run(listen: String, tx: Box<dyn Producer>, nm: NodeMetrics) -> Result<()> {
+/// Serve the OTLP metrics gRPC endpoint on `listen`, pushing each datapoint downstream as
+/// a Record. `max_recv_bytes` caps the encoded size of a single decoded request and
+/// `max_concurrent_streams` caps per-connection stream fan-in - both bound the resources
+/// an untrusted client can force the receiver to spend.
+pub async fn run(
+    listen: String,
+    max_recv_bytes: usize,
+    max_concurrent_streams: u32,
+    tx: Box<dyn Producer>,
+    nm: NodeMetrics,
+) -> Result<()> {
     let addr: SocketAddr = listen
         .parse()
         .with_context(|| format!("invalid OTLP listen address `{listen}`"))?;
@@ -53,9 +62,11 @@ pub async fn run(listen: String, tx: Box<dyn Producer>, nm: NodeMetrics) -> Resu
         nm,
         norm: Arc::new(Mutex::new(Normalizer::default())),
     };
-    tracing::info!(%addr, "OTLP receiver listening");
+    let server = MetricsServiceServer::new(service).max_decoding_message_size(max_recv_bytes);
+    tracing::info!(%addr, max_recv_bytes, max_concurrent_streams, "OTLP receiver listening");
     tonic::transport::Server::builder()
-        .add_service(MetricsServiceServer::new(service))
+        .max_concurrent_streams(Some(max_concurrent_streams))
+        .add_service(server)
         .serve_with_shutdown(addr, crate::runtime::shutdown_signal())
         .await
         .context("OTLP receiver")?;

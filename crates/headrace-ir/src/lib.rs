@@ -37,6 +37,15 @@ pub enum Source {
         id: String,
         #[serde(default = "d_otlp_listen")]
         listen: String,
+        /// Reject any single OTLP request whose encoded size exceeds this many bytes,
+        /// bounding the memory one request can force the receiver to buffer and decode.
+        /// Defaults to 4 MiB.
+        #[serde(default = "d_otlp_max_recv_bytes")]
+        max_recv_bytes: usize,
+        /// Cap concurrent HTTP/2 streams per connection, bounding the fan-in a single
+        /// client can open. Defaults to 256.
+        #[serde(default = "d_otlp_max_concurrent_streams")]
+        max_concurrent_streams: u32,
     },
 }
 
@@ -234,4 +243,10 @@ fn d_interval() -> String {
 }
 fn d_otlp_listen() -> String {
     "0.0.0.0:4317".into()
+}
+fn d_otlp_max_recv_bytes() -> usize {
+    4 * 1024 * 1024
+}
+fn d_otlp_max_concurrent_streams() -> u32 {
+    256
 }

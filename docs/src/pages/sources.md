@@ -18,12 +18,17 @@ Collector at it.
 sources:
   - type: otlp
     id: in
-    listen: 0.0.0.0:4317   # bind address (default: 0.0.0.0:4317)
+    listen: 0.0.0.0:4317          # bind address (default: 0.0.0.0:4317)
+    max_recv_bytes: 4194304        # reject requests larger than this (default: 4 MiB)
+    max_concurrent_streams: 256    # per-connection HTTP/2 stream cap (default: 256)
 ```
 
 Incoming OTLP metrics are normalized into the internal [record](/concepts#the-record) model,
 including cumulative-to-delta conversion where needed. It speaks plain gRPC; no TLS or auth is
-terminated in-process, so front it with a trusted network or a sidecar if you need those.
+terminated in-process, so front it with a trusted network or a sidecar if you need those. The
+receiver is an untrusted-input boundary, so `max_recv_bytes` and `max_concurrent_streams` cap
+the memory and stream fan-in a single client can force; both have safe defaults and rarely need
+tuning. Transport TLS/mTLS is on the roadmap.
 
 ## stdin
 
