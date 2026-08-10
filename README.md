@@ -43,7 +43,7 @@ For a release binary via source, Docker, or Helm, see [Install](https://headrace
 | Sources | `otlp` (gRPC receiver), `generator`, `stdin` | - |
 | Transforms | `filter`, `window` (tumbling + sliding, event-time), `map`, `join` (cross-series) | session windows, `wasm` |
 | Sinks | `otlp` (gRPC exporter), `stdout` (text / json) | Prometheus remote-write |
-| Aggregates | `count`, `sum`, `min`, `max`, `avg` | quantiles (mergeable sketches) |
+| Aggregates | `count`, `sum`, `min`, `max`, `avg` | quantiles (DDSketch), `stddev`, `count_distinct` (HLL), `first`/`last`, OTel exp-histogram merge - all mergeable ([ADR-0005](./adr/0005-event-time-windows-and-mergeable-aggregates.md)) |
 | Backend | in-process (single binary) | NATS JetStream (partitioned, scaled) |
 | Deploy | Helm chart, OTLP `Record` cumulative-to-delta normalization | `Pipeline` CRD + operator |
 
