@@ -7,8 +7,24 @@ showAskAi: false
 # Install
 
 Headrace is a single self-contained binary. Pick the path that matches where you run it:
-from source for dev and the edge, the container image for anything else, or the Helm chart
-for Kubernetes.
+crates.io for a quick local install, from source for dev and the edge, the container image
+for anything else, or the Helm chart for Kubernetes.
+
+## From crates.io
+
+```sh
+cargo install headrace
+```
+
+Or fetch a prebuilt binary instead of compiling, with
+[cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
+
+```sh
+cargo binstall headrace
+```
+
+Prebuilt binaries for Linux (x86_64, aarch64) and macOS (x86_64, aarch64) are attached to
+each [GitHub release](https://github.com/headrace-rs/headrace/releases).
 
 ## From source
 

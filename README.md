@@ -6,6 +6,8 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/headrace-rs/headrace/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/headrace-rs/headrace/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/codecov/c/github/headrace-rs/headrace/main?style=flat-square)](https://codecov.io/gh/headrace-rs/headrace)
+[![crates.io](https://img.shields.io/crates/v/headrace?style=flat-square)](https://crates.io/crates/headrace)
+[![docs](https://img.shields.io/badge/docs-headrace.rs-e76125?style=flat-square)](https://headrace.rs/docs)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](./LICENSE)
 
 OTel-native, stateful stream processing in a single Rust binary. Point OpenTelemetry at it,
@@ -17,6 +19,19 @@ backend.
   <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/pipeline-dark.svg">
   <img src="./docs/assets/pipeline.svg" alt="headrace pipeline: sources through stateful transforms to sinks" width="100%">
 </picture>
+
+## Install
+
+```sh
+cargo install headrace                                            # from crates.io
+cargo binstall headrace                                           # prebuilt binary, no compile
+docker pull ghcr.io/headrace-rs/headrace                          # container image
+helm install headrace oci://ghcr.io/headrace-rs/charts/headrace   # Kubernetes
+```
+
+Prebuilt binaries for Linux and macOS are attached to each
+[release](https://github.com/headrace-rs/headrace/releases); full options at
+[headrace.rs/docs/install](https://headrace.rs/docs/install).
 
 ## Quickstart
 
@@ -33,8 +48,6 @@ Validate a pipeline, or print the IR JSON Schema:
 cargo run -p headrace -- validate examples/latency.yaml
 cargo run -p headrace -- schema
 ```
-
-For a release binary via source, Docker, or Helm, see [Install](https://headrace.rs/docs/install).
 
 ## Features
 
