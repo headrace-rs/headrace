@@ -6,6 +6,15 @@
 
 use crate::record::{Fault, Record};
 
+/// Caps that keep a hostile or accidentally-huge expression from exhausting the parser:
+/// a flat length bound (`MAX_TOKENS`) and a nesting bound (`MAX_DEPTH`, which caps the
+/// recursive-descent depth so deep nesting errors instead of overflowing the stack). Real
+/// expressions are a handful of tokens and shallow; both limits sit far above any
+/// legitimate use and exist only to make parsing a bounded, panic-free operation on input
+/// that may come from a less-trusted author once IR authoring is exposed.
+const MAX_TOKENS: usize = 1024;
+const MAX_DEPTH: usize = 64;
+
 /// A parse failure, with a human-readable reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError(pub String);
@@ -21,8 +30,14 @@ impl Expr {
         if tokens.is_empty() {
             return Err(ParseError("empty expression".into()));
         }
+        if tokens.len() > MAX_TOKENS {
+            return Err(ParseError(format!(
+                "expression too long: {} tokens (max {MAX_TOKENS})",
+                tokens.len()
+            )));
+        }
         let mut parser = Parser { tokens, pos: 0 };
-        let node = parser.expr(0)?;
+        let node = parser.expr(0, 0)?;
         if parser.pos != parser.tokens.len() {
             return Err(ParseError("unexpected trailing input".into()));
         }
@@ -166,22 +181,27 @@ impl Parser {
 
     /// Pratt parse with binding powers. `+ -` bind loosest, then `* / %`, then `^`
     /// (right-associative); unary `-` binds between `* / %` and `^`.
-    fn expr(&mut self, min_bp: u8) -> Result<Node, ParseError> {
-        let mut lhs = self.prefix()?;
+    fn expr(&mut self, min_bp: u8, depth: usize) -> Result<Node, ParseError> {
+        if depth > MAX_DEPTH {
+            return Err(ParseError(format!(
+                "expression nested too deeply (max {MAX_DEPTH})"
+            )));
+        }
+        let mut lhs = self.prefix(depth)?;
         while let Some((op, l_bp, r_bp)) = self.peek().and_then(infix) {
             if l_bp < min_bp {
                 break;
             }
             self.pos += 1;
-            let rhs = self.expr(r_bp)?;
+            let rhs = self.expr(r_bp, depth + 1)?;
             lhs = Node::Bin(op, Box::new(lhs), Box::new(rhs));
         }
         Ok(lhs)
     }
 
-    fn prefix(&mut self) -> Result<Node, ParseError> {
+    fn prefix(&mut self, depth: usize) -> Result<Node, ParseError> {
         match self.next() {
-            Some(Token::Minus) => Ok(Node::Neg(Box::new(self.expr(5)?))),
+            Some(Token::Minus) => Ok(Node::Neg(Box::new(self.expr(5, depth + 1)?))),
             Some(Token::Num(n)) => Ok(Node::Num(n)),
             Some(Token::Ident(name)) => Ok(if name == "value" {
                 Node::Value
@@ -189,7 +209,7 @@ impl Parser {
                 Node::Field(name)
             }),
             Some(Token::LParen) => {
-                let inner = self.expr(0)?;
+                let inner = self.expr(0, depth + 1)?;
                 match self.next() {
                     Some(Token::RParen) => Ok(inner),
                     _ => Err(ParseError("expected `)`".into())),
@@ -267,6 +287,30 @@ mod tests {
         for bad in ["", "1 +", "1 + + 2", "(1 + 2", "value $ 2", "1 2"] {
             assert!(Expr::parse(bad).is_err(), "`{bad}` should not parse");
         }
+    }
+
+    #[test]
+    fn rejects_too_deeply_nested() {
+        // Deep nesting must be rejected, not overflow the recursive-descent parser.
+        let n = MAX_DEPTH + 5;
+        let deep = format!("{}1{}", "(".repeat(n), ")".repeat(n));
+        let err = Expr::parse(&deep).expect_err("over-deep expression must be rejected");
+        assert!(err.0.contains("nested too deeply"), "got: {}", err.0);
+    }
+
+    #[test]
+    fn rejects_too_many_tokens() {
+        // A very long flat expression is bounded by the token cap before parsing.
+        let long = format!("1{}", " + 1".repeat(MAX_TOKENS));
+        let err = Expr::parse(&long).expect_err("over-long expression must be rejected");
+        assert!(err.0.contains("too long"), "got: {}", err.0);
+    }
+
+    #[test]
+    fn accepts_reasonable_nesting() {
+        // Well under the depth cap still parses and evaluates.
+        let ok = format!("{}1 + 2{}", "(".repeat(10), ")".repeat(10));
+        assert_eq!(constant(&ok), 3.0);
     }
 
     proptest! {
