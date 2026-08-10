@@ -143,17 +143,16 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   # Publish the crates to crates.io in dependency order, in the same run that cut the
-  # release. DORMANT until launch - the `vars.PUBLISH_CRATES` gate keeps it off. To go
-  # live: (1) manually `cargo publish -p <crate>` each crate once to claim the names, in
-  # the order below; (2) add a GitHub Actions trusted publisher for this repo + workflow
-  # on each crate's crates.io settings; (3) set the `PUBLISH_CRATES` repo variable to
-  # 'true'. Trusted publishing exchanges the OIDC token for a short-lived crates.io token,
-  # so no API-token secret is stored. Path-dep versions are kept in the manifest (bumped
-  # by knope), so no stamping is needed here.
+  # release, via trusted publishing: the OIDC token is exchanged for a short-lived
+  # crates.io token, so no API-token secret is stored. Path-dep versions live in the
+  # manifest (bumped by knope), so no stamping is needed. One-time setup, required before
+  # the first release that runs this: `cargo publish -p <crate>` each crate once to claim
+  # the names (the order below), then add a GitHub Actions trusted publisher (this repo +
+  # the `release.yml` workflow) on each crate's crates.io settings.
   crates:
     name: Publish to crates.io
     needs: release
-    if: needs.release.outputs.released == 'true' && vars.PUBLISH_CRATES == 'true'
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
