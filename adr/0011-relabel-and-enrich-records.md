@@ -16,11 +16,12 @@ came up in passing is not lost.
 
 ## Decision
 
-We will add a small, stateless transform that reshapes a record's identity - separate from `map`
-(which owns `value`) and `filter` (which selects whole records). Candidate surface:
+We will add a small, stateless transform, **`enrich`**, that reshapes a record's identity -
+separate from `map` (which owns `value`) and `filter` (which selects whole records). Candidate
+surface:
 
 ```yaml
-- type: relabel                     # name TBD: relabel | rename | set | enrich
+- type: enrich
   id: r
   input: rollup
   name: "req.count.avg"             # rewrite the metric name
@@ -29,23 +30,36 @@ We will add a small, stateless transform that reshapes a record's identity - sep
   drop: [pod]                       # drop attributes
 ```
 
+Resolved since first drafting:
+
+- **Name: `enrich`.** Chosen over `relabel` and `remap`, both of which carry ecosystem baggage that
+  overpromises this transform's scope: Prometheus `relabel` implies its regex action model
+  (`keep`/`drop`/`replace`/`hashmod`), and Vector `remap` implies VRL, a whole embedded language.
+  `enrich` names the intent (reshape and attach identity) without importing either model.
+- **One transform, not several.** `name` + `rename` + `set` + `drop` live in one `enrich` node.
+- **Shared matcher with `filter`.** `enrich` and `filter` will share one predicate concept rather
+  than grow two condition grammars. This is the decision to settle *before* implementing either
+  the `enrich` selector or a richer `filter`.
+
 ## Open questions
 
-Resolve before implementing (v0.7):
+Resolve before implementing:
 
-- **Scope and name.** One transform (name + rename + set + drop) or several? Is it `relabel`
-  (Prometheus-familiar), `rename`, `set`, or `enrich`?
-- **Selector.** Should it apply only to records matching a condition ("where ...")? If so, match on
-  what - attributes, metric name, value - and what is the selector called (`match`)? This is
-  adjacent to `filter`, which already selects whole records; prefer one shared matcher concept
-  across `filter` and this transform over two divergent condition syntaxes.
-- **Set vs enrich.** Static `set` values are trivial; pulling values from an external table (true
-  enrichment, with I/O and caching) is a much larger feature that may belong in `wasm` or a
-  dedicated lookup node instead.
+- **The shared matcher's shape.** `filter` today is `key` exists / `equals`. Define the shared
+  predicate type both `filter` and `enrich`'s optional selector ("apply only where ...") reference:
+  what it matches on (attribute, metric name, value), how it composes (single condition vs.
+  and/or), and its name (`match` / `where`). Do this once, on the `filter` side, so `enrich` adopts
+  it rather than inventing a parallel grammar.
+- **Static `set` now; external enrichment later.** Static `set` values land with `enrich`. True
+  enrichment - pulling values from an external table, **pull- or push-based**, with I/O and caching
+  - is a wanted follow-on but a much larger feature; it belongs in `wasm` or a dedicated lookup
+  node, not folded into this stateless transform. Track it as its own roadmap item.
 
 ## Consequences
 
-- Stateless and per-record, like `filter` and `map`: no windows, backend, or state, so it is
+- Stateless and per-record, like `filter` and `map`: no windows, backend, or state, so `enrich` is
   unblocked and could land earlier than v0.7 if prioritized.
-- Deciding the selector question also settles whether `filter` and this transform share a matcher;
-  choosing now avoids two condition grammars later.
+- The shared matcher is now a prerequisite: settling it unblocks both a richer `filter` and
+  `enrich`'s selector, and avoids two condition grammars later.
+- External (pull/push) enrichment is explicitly out of `enrich`'s scope and tracked separately, so
+  the stateless transform stays small and statically validatable.
