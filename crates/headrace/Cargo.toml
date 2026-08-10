@@ -5,8 +5,20 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "OTel-native, stateful stream processing in a single Rust binary."
-# Not on crates.io yet; flip when the CLI is published.
+keywords = ["opentelemetry", "observability", "metrics", "streaming", "otlp"]
+categories = ["command-line-utilities", "network-programming"]
+readme = "README.md"
+# Not on crates.io yet. Launch: claim the names with a manual publish, add a crates.io
+# trusted publisher for the Release workflow, remove these publish = false lines, then set
+# the PUBLISH_CRATES repo variable (see release.yml `crates`).
 publish = false
+
+[package.metadata.binstall]
+# cargo-binstall fetches a prebuilt binary instead of compiling. The asset naming matches
+# the binaries job in release.yml (headrace-<target>.tar.gz, binary at the archive root).
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.{ archive-format }"
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"
 
 [[bin]]
 name = "headrace"

@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core runtime for Headrace: IR execution, transforms, backends, OTLP, and state inspection."
+keywords = ["opentelemetry", "observability", "streaming", "metrics", "otlp"]
+categories = ["network-programming", "development-tools"]
+readme = "README.md"
 publish = false
 
 [dependencies]

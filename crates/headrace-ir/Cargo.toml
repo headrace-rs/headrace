@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Headrace pipeline IR: the declarative schema for sources, transforms, and sinks."
+keywords = ["opentelemetry", "observability", "streaming", "pipeline", "schema"]
+categories = ["config", "development-tools"]
+readme = "README.md"
 publish = false
 
 [dependencies]
