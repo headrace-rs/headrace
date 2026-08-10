@@ -1,0 +1,39 @@
+name: Dependencies
+
+# cargo-deny: security advisories, license policy, and source allowlisting (config in
+# deny.toml). Runs on any dependency change, and on a daily schedule - RUSTSEC
+# advisories are disclosed independently of our code, so a green tree can go red
+# without a commit.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'deny.toml'
+      - '.github/workflows/deny.yml'
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'deny.toml'
+      - '.github/workflows/deny.yml'
+  schedule:
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      # --all-features so the otlp dependency tree (tonic, opentelemetry-proto, ...) is
+      # covered, matching what `cargo deny check` sees locally.
+      - run: cargo deny --all-features check
