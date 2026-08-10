@@ -104,14 +104,14 @@ async fn otlp_round_trips_through_a_window_rollup() {
     let metrics: SharedMetrics = Arc::new(NoopMetrics);
     let listen = free_addr();
     let source: Source =
-        serde_yaml::from_str(&format!("type: otlp\nid: in\nlisten: {listen}")).unwrap();
+        serde_norway::from_str(&format!("type: otlp\nid: in\nlisten: {listen}")).unwrap();
     // A 1h window never ticks during the test: every point folds into the single flush on
     // drain, so the collector sees exactly one rollup.
-    let window: Transform = serde_yaml::from_str(
+    let window: Transform = serde_norway::from_str(
         "type: window\nid: w\ninput: in\nsize: 1h\ngroup_by: [service.name]\naggregate:\n  op: avg\n  field: value",
     )
     .unwrap();
-    let sink: Sink = serde_yaml::from_str(&format!(
+    let sink: Sink = serde_norway::from_str(&format!(
         "type: otlp\nid: out\ninput: w\nendpoint: {collector_endpoint}"
     ))
     .unwrap();

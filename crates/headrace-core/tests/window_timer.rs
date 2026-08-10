@@ -25,7 +25,7 @@ async fn window_fires_on_the_event_time_watermark() {
 
     // Transform is #[non_exhaustive]; build it through the parser, not a literal.
     let op: Transform =
-        serde_yaml::from_str("type: window\nid: w\ninput: in\nsize: 5s\naggregate:\n  op: count")
+        serde_norway::from_str("type: window\nid: w\ninput: in\nsize: 5s\naggregate:\n  op: count")
             .unwrap();
     let task = tokio::spawn(headrace_core::transform::run(
         op,
@@ -74,7 +74,7 @@ async fn idle_timeout_collapses_an_open_window() {
     let nm = NodeMetrics::bind(&m, "w", NodeKind::Window);
 
     // A 1h window never closes on the watermark here, but idle_timeout: 5s does.
-    let op: Transform = serde_yaml::from_str(
+    let op: Transform = serde_norway::from_str(
         "type: window\nid: w\ninput: in\nsize: 1h\nidle_timeout: 5s\naggregate:\n  op: count",
     )
     .unwrap();

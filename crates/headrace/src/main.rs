@@ -189,7 +189,7 @@ fn init_tracing(filter: &str, format: LogFormat) -> tracing_appender::non_blocki
 
 fn load(file: &PathBuf) -> Result<Pipeline> {
     let text = std::fs::read_to_string(file).with_context(|| format!("reading {file:?}"))?;
-    serde_yaml::from_str(&text).with_context(|| format!("parsing {file:?}"))
+    serde_norway::from_str(&text).with_context(|| format!("parsing {file:?}"))
 }
 
 #[cfg(test)]

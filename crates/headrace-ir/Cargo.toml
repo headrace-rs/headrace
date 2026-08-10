@@ -13,4 +13,4 @@ serde_json.workspace = true
 schemars.workspace = true
 
 [dev-dependencies]
-serde_yaml.workspace = true
+serde_norway.workspace = true

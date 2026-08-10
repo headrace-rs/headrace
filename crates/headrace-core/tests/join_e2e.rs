@@ -29,9 +29,10 @@ async fn window_then_join_reduces_two_series() {
     let m: SharedMetrics = Arc::new(NoopMetrics);
     let hi: Transform = window("hi", "hi_src");
     let lo: Transform = window("lo", "lo_src");
-    let j: Transform =
-        serde_yaml::from_str("type: join\nid: j\ninputs: [hi, lo]\nname: diff\nvalue: \"hi - lo\"")
-            .unwrap();
+    let j: Transform = serde_norway::from_str(
+        "type: join\nid: j\ninputs: [hi, lo]\nname: diff\nvalue: \"hi - lo\"",
+    )
+    .unwrap();
     tokio::spawn(headrace_core::transform::run(
         hi,
         vec![hi_rx],
@@ -87,14 +88,14 @@ async fn window_then_join_reduces_two_series() {
 
 #[test]
 fn cross_series_example_is_valid() {
-    let p: Pipeline = serde_yaml::from_str(include_str!("../../../examples/cross_series.yaml"))
+    let p: Pipeline = serde_norway::from_str(include_str!("../../../examples/cross_series.yaml"))
         .expect("example parses");
     headrace_core::validate(&p).expect("example validates");
 }
 
 // A 5s max window keyed by service.name, reading `input`, emitting node `id`.
 fn window(id: &str, input: &str) -> Transform {
-    serde_yaml::from_str(&format!(
+    serde_norway::from_str(&format!(
         "type: window\nid: {id}\ninput: {input}\nsize: 5s\ngroup_by: [service.name]\naggregate:\n  op: max\n  field: value"
     ))
     .unwrap()

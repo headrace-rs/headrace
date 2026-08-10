@@ -28,7 +28,7 @@ async fn window_answers_a_query_from_its_own_loop() {
 
     // #[non_exhaustive]: build the transform through the parser, not a literal.
     let op: Transform =
-        serde_yaml::from_str("type: window\nid: w\ninput: in\nsize: 5s\naggregate:\n  op: count")
+        serde_norway::from_str("type: window\nid: w\ninput: in\nsize: 5s\naggregate:\n  op: count")
             .unwrap();
     let task = tokio::spawn(headrace_core::transform::run(
         op,

@@ -6,7 +6,7 @@ const EXAMPLE: &str = include_str!("../../../examples/latency.yaml");
 
 #[test]
 fn parses_the_shipped_example() {
-    let p: Pipeline = serde_yaml::from_str(EXAMPLE).expect("example parses");
+    let p: Pipeline = serde_norway::from_str(EXAMPLE).expect("example parses");
     assert_eq!(p.sources.len(), 1);
     assert_eq!(p.transforms.len(), 2);
     assert_eq!(p.sinks.len(), 1);
@@ -32,7 +32,7 @@ fn parses_the_shipped_example() {
 
 #[test]
 fn applies_defaults_to_a_minimal_source() {
-    let p: Pipeline = serde_yaml::from_str(
+    let p: Pipeline = serde_norway::from_str(
         "sources: [{ type: generator, id: g }]\nsinks: [{ type: stdout, id: o, input: g }]",
     )
     .unwrap();
@@ -48,7 +48,7 @@ fn applies_defaults_to_a_minimal_source() {
 
 #[test]
 fn parses_otlp_source_and_sink() {
-    let p: Pipeline = serde_yaml::from_str(
+    let p: Pipeline = serde_norway::from_str(
         r#"
         sources: [{ type: otlp, id: in }]
         sinks: [{ type: otlp, id: out, input: in, endpoint: "http://collector:4317" }]
@@ -71,7 +71,7 @@ fn parses_otlp_source_and_sink() {
 
 #[test]
 fn window_options_parse_and_default() {
-    let p: Pipeline = serde_yaml::from_str(
+    let p: Pipeline = serde_norway::from_str(
         r#"
         sources: [{ type: generator, id: g }]
         transforms:
@@ -110,7 +110,7 @@ fn window_options_parse_and_default() {
 
 #[test]
 fn parses_map_expression() {
-    let p: Pipeline = serde_yaml::from_str(
+    let p: Pipeline = serde_norway::from_str(
         r#"
         sources: [{ type: generator, id: g }]
         transforms: [{ type: map, id: m, input: g, value: "errors / total" }]
@@ -134,7 +134,7 @@ fn parses_map_expression() {
 
 #[test]
 fn parses_join() {
-    let p: Pipeline = serde_yaml::from_str(
+    let p: Pipeline = serde_norway::from_str(
         r#"
         sources:
           - { type: generator, id: s1 }
@@ -163,7 +163,7 @@ fn parses_join() {
 
 #[test]
 fn pipeline_roundtrips_through_json() {
-    let p: Pipeline = serde_yaml::from_str(EXAMPLE).unwrap();
+    let p: Pipeline = serde_norway::from_str(EXAMPLE).unwrap();
     let json = serde_json::to_string(&p).unwrap();
     let back: Pipeline = serde_json::from_str(&json).unwrap();
     assert_eq!(p, back);

@@ -25,7 +25,7 @@ async fn state_get_reports_live_window_state() {
     let addr = free_addr();
     // A 1h window never fires during the test, so records accumulate as open state. The
     // generator cycles `service.name`, giving labelled groups to observe.
-    let p: Pipeline = serde_yaml::from_str(
+    let p: Pipeline = serde_norway::from_str(
         r#"
         sources: [{ type: generator, id: gen, interval: 1ms }]
         transforms:
@@ -85,7 +85,7 @@ async fn watch_streams_window_state_as_it_changes() {
     use headrace_proto::v1::WatchRequest;
 
     let addr = free_addr();
-    let p: Pipeline = serde_yaml::from_str(
+    let p: Pipeline = serde_norway::from_str(
         r#"
         sources: [{ type: generator, id: gen, interval: 1ms }]
         transforms:

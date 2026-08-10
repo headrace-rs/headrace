@@ -16,7 +16,7 @@ path = "src/main.rs"
 headrace-ir.workspace = true
 headrace-core = { workspace = true, features = ["otlp", "inspect"] }
 headrace-proto.workspace = true
-serde_yaml.workspace = true
+serde_norway.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 tonic.workspace = true

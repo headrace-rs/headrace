@@ -712,7 +712,7 @@ mod tests {
     }
 
     fn pipeline(yaml: &str) -> Pipeline {
-        serde_yaml::from_str(yaml).expect("valid yaml")
+        serde_norway::from_str(yaml).expect("valid yaml")
     }
 
     const GOOD: &str = r#"
