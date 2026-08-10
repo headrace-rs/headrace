@@ -482,7 +482,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "headrace"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "clap",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-core"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-ir"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "schemars",
  "serde",
@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-proto"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "prost",
  "tonic",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-proto-gen"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "tonic-prost-build",
 ]

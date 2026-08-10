@@ -1,3 +1,10 @@
+## 0.1.14 (2026-08-10)
+
+### Features
+
+- cap expression tokens and depth
+- add configurable receiver caps
+
 ## 0.1.13 (2026-08-09)
 
 ### Features
