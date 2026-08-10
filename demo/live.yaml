@@ -1,0 +1,14 @@
+# Realtime companion to pipeline.yaml: same edge aggregation, but fed at a live rate so you
+# can watch windows fire. Raw samples stream in on stdin; every 3s a window closes and emits
+# one average-latency datapoint per service.
+sources:
+  - { type: stdin, id: raw }
+transforms:
+  - type: window
+    id: rollup
+    input: raw
+    size: 3s
+    group_by: [service.name]
+    aggregate: { op: avg, field: value }
+sinks:
+  - { type: stdout, id: out, input: rollup, format: text }

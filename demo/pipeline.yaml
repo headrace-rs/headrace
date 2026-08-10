@@ -1,0 +1,15 @@
+# Edge pre-aggregation. A high-cardinality raw stream (http.server.duration, tagged by
+# service x route x pod x status) comes in on stdin; what leaves is average latency per
+# service and route over 10s windows - a tiny fraction of the datapoints and series. In
+# production the edges are OTLP instead of stdin/stdout, but the reduction is identical.
+sources:
+  - { type: stdin, id: raw }
+transforms:
+  - type: window
+    id: rollup
+    input: raw
+    size: 10s
+    group_by: [service.name, http.route]
+    aggregate: { op: avg, field: value }
+sinks:
+  - { type: stdout, id: out, input: rollup, format: json }
