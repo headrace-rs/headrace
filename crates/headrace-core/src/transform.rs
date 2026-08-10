@@ -10,7 +10,7 @@ mod join;
 mod map;
 mod window;
 
-pub use window::Window;
+pub use window::{Window, WindowConfig};
 
 use crate::backend::{Consumer, Producer};
 use crate::inspect::Inspect;

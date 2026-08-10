@@ -7,9 +7,10 @@
 //! would make "order-independent" false in the last ULP for the wrong reason.
 
 use headrace_core::record::{Attrs, Record};
-use headrace_core::transform::Window;
+use headrace_core::transform::{Window, WindowConfig};
 use headrace_ir::{Aggregate, AggregateOp, FaultAction};
 use proptest::prelude::*;
+use std::time::Duration;
 
 proptest! {
     /// Out-of-order arrival within a window must not change the result.
@@ -64,19 +65,15 @@ fn rec(v: f64) -> Record {
 /// Single-group aggregate over `vs`. `None` when `vs` is empty (no group forms).
 fn agg_over(op: AggregateOp, vs: &[f64]) -> Option<f64> {
     // All samples share ts 1, so they land in one window; drain it in full.
-    let mut w = Window::new(
-        1000,
-        1000, // tumbling
-        0,
-        vec![],
+    let mut w = Window::from(WindowConfig::tumbling(
+        Duration::from_nanos(1000),
         Aggregate {
             op,
             field: None,
             on_missing: FaultAction::Skip,
             on_invalid: FaultAction::Skip,
         },
-        None,
-    );
+    ));
     for &v in vs {
         w.on_record(&rec(v)).unwrap();
     }

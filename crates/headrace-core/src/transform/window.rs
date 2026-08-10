@@ -115,29 +115,58 @@ pub struct Window {
     late: u64,
 }
 
-impl Window {
-    pub fn new(
-        size_nanos: u64,
-        slide_nanos: u64,
-        lateness_nanos: u64,
-        group_by: Vec<String>,
-        aggregate: Aggregate,
-        name: Option<String>,
-    ) -> Self {
+/// Parsed, typed settings for a [`Window`]. Build a `Window` with `Window::from` /
+/// `.into()` rather than positional arguments, so the three durations can't be silently
+/// transposed at a call site.
+pub struct WindowConfig {
+    /// Window length.
+    pub size: Duration,
+    /// Step between window starts: equal to `size` for tumbling, smaller for sliding.
+    pub slide: Duration,
+    /// Grace period, in event time, to hold a window open past its end for late records.
+    pub lateness: Duration,
+    /// Attribute keys whose tuple identifies a group; empty aggregates the whole stream.
+    pub group_by: Vec<String>,
+    pub aggregate: Aggregate,
+    /// Renames the emitted metric; `None` keeps each group's source name.
+    pub name: Option<String>,
+}
+
+impl WindowConfig {
+    /// A tumbling window (`slide == size`) with no allowed lateness and no grouping - the
+    /// common single-series case. Override fields with struct-update syntax:
+    /// `WindowConfig { lateness, ..WindowConfig::tumbling(size, agg) }`.
+    pub fn tumbling(size: Duration, aggregate: Aggregate) -> Self {
         Self {
-            size_nanos,
-            slide_nanos,
-            lateness_nanos,
-            group_by,
+            size,
+            slide: size,
+            lateness: Duration::ZERO,
+            group_by: Vec::new(),
             aggregate,
-            name,
+            name: None,
+        }
+    }
+}
+
+impl From<WindowConfig> for Window {
+    fn from(cfg: WindowConfig) -> Self {
+        let nanos = |d: Duration| d.as_nanos() as u64;
+        Self {
+            size_nanos: nanos(cfg.size),
+            slide_nanos: nanos(cfg.slide),
+            lateness_nanos: nanos(cfg.lateness),
+            group_by: cfg.group_by,
+            aggregate: cfg.aggregate,
+            name: cfg.name,
             windows: BTreeMap::new(),
             max_event: 0,
             skipped: 0,
             late: 0,
         }
     }
+}
 
+impl Window {
     /// Event time up to which input is treated as complete: the newest event seen, less
     /// the allowed lateness.
     fn watermark(&self) -> u64 {
@@ -338,27 +367,27 @@ pub(super) async fn run(
         aggregate,
         name,
     } = spec;
-    let size_nanos = humantime::parse_duration(&size)?.as_nanos() as u64;
-    let slide_nanos = match &slide {
-        Some(s) => humantime::parse_duration(s)?.as_nanos() as u64,
-        None => size_nanos, // tumbling
+    let size = humantime::parse_duration(&size)?;
+    let slide = match &slide {
+        Some(s) => humantime::parse_duration(s)?,
+        None => size, // tumbling
     };
-    let lateness_nanos = match &allowed_lateness {
-        Some(l) => humantime::parse_duration(l)?.as_nanos() as u64,
-        None => 0,
+    let lateness = match &allowed_lateness {
+        Some(l) => humantime::parse_duration(l)?,
+        None => Duration::ZERO,
     };
     let idle = match &idle_timeout {
         Some(t) => Some(humantime::parse_duration(t)?),
         None => None,
     };
-    let mut win = Window::new(
-        size_nanos,
-        slide_nanos,
-        lateness_nanos,
+    let mut win = Window::from(WindowConfig {
+        size,
+        slide,
+        lateness,
         group_by,
         aggregate,
         name,
-    );
+    });
 
     loop {
         tokio::select! {
@@ -535,7 +564,10 @@ mod tests {
             on_missing: FaultAction::Skip,
             on_invalid: FaultAction::Error,
         };
-        let mut w = Window::new(SIZE, SIZE, 0, vec![], aggregate, None);
+        let mut w = Window::from(WindowConfig::tumbling(
+            Duration::from_nanos(SIZE),
+            aggregate,
+        ));
         w.on_record(&rec("m", 0.0, &[])).unwrap(); // "lat" absent -> skipped
         assert!(
             w.on_record(&rec("m", 0.0, &[("lat", AttrValue::Str("x".into()))]))
@@ -597,14 +629,13 @@ mod tests {
     #[test]
     fn allowed_lateness_delays_firing_and_includes_late_records() {
         // watermark = max_event - 500, so [0, SIZE) fires only once max_event >= SIZE+500.
-        let mut w = Window::new(
-            SIZE,
-            SIZE, // tumbling
-            500,
-            vec![],
-            agg(AggregateOp::Count, None, FaultAction::Skip),
-            None,
-        );
+        let mut w = Window::from(WindowConfig {
+            lateness: Duration::from_nanos(500),
+            ..WindowConfig::tumbling(
+                Duration::from_nanos(SIZE),
+                agg(AggregateOp::Count, None, FaultAction::Skip),
+            )
+        });
         w.on_record(&rec_at("m", 1.0, 100)).unwrap(); // [0, SIZE)
         w.on_record(&rec_at("m", 1.0, 200)).unwrap(); // [0, SIZE)
         w.on_record(&rec_at("m", 1.0, SIZE + 200)).unwrap(); // watermark SIZE-300 < SIZE
@@ -622,14 +653,13 @@ mod tests {
 
     #[test]
     fn name_override_renames_the_output() {
-        let mut w = Window::new(
-            SIZE,
-            SIZE,
-            0,
-            vec![],
-            agg(AggregateOp::Count, None, FaultAction::Skip),
-            Some("renamed".to_string()),
-        );
+        let mut w = Window::from(WindowConfig {
+            name: Some("renamed".to_string()),
+            ..WindowConfig::tumbling(
+                Duration::from_nanos(SIZE),
+                agg(AggregateOp::Count, None, FaultAction::Skip),
+            )
+        });
         w.on_record(&rec("m", 1.0, &[])).unwrap();
         assert_eq!(w.drain_all()[0].name, "renamed");
     }
@@ -639,14 +669,13 @@ mod tests {
     #[test]
     fn sliding_folds_a_record_into_overlapping_windows() {
         // size 1000, slide 500: t=700 falls in both [0,1000) and [500,1500).
-        let mut w = Window::new(
-            1000,
-            500,
-            0,
-            vec![],
-            agg(AggregateOp::Count, None, FaultAction::Skip),
-            None,
-        );
+        let mut w = Window::from(WindowConfig {
+            slide: Duration::from_nanos(500),
+            ..WindowConfig::tumbling(
+                Duration::from_nanos(1000),
+                agg(AggregateOp::Count, None, FaultAction::Skip),
+            )
+        });
         w.on_record(&rec_at("m", 1.0, 700)).unwrap();
         let mut out = w.drain_all();
         out.sort_by_key(|r| r.start_ts_nanos);
@@ -658,14 +687,13 @@ mod tests {
 
     #[test]
     fn sliding_windows_fire_as_the_watermark_advances() {
-        let mut w = Window::new(
-            1000,
-            500,
-            0,
-            vec![],
-            agg(AggregateOp::Count, None, FaultAction::Skip),
-            None,
-        );
+        let mut w = Window::from(WindowConfig {
+            slide: Duration::from_nanos(500),
+            ..WindowConfig::tumbling(
+                Duration::from_nanos(1000),
+                agg(AggregateOp::Count, None, FaultAction::Skip),
+            )
+        });
         w.on_record(&rec_at("m", 1.0, 200)).unwrap(); // [0,1000)
         w.on_record(&rec_at("m", 1.0, 700)).unwrap(); // [0,1000) and [500,1500)
         assert!(w.drain_ready().is_empty(), "watermark 700 < any window end");
@@ -724,14 +752,10 @@ mod tests {
         on_missing: FaultAction,
         group_by: &[&str],
     ) -> Window {
-        Window::new(
-            SIZE,
-            SIZE, // tumbling: slide == size
-            0,
-            group_by.iter().map(|s| s.to_string()).collect(),
-            agg(op, field, on_missing),
-            None,
-        )
+        Window::from(WindowConfig {
+            group_by: group_by.iter().map(|s| s.to_string()).collect(),
+            ..WindowConfig::tumbling(Duration::from_nanos(SIZE), agg(op, field, on_missing))
+        })
     }
 
     fn rec(name: &str, value: f64, attrs: &[(&str, AttrValue)]) -> Record {
