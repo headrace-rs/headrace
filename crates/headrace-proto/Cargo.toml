@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Checked-in gRPC stubs for Headrace admin services; regenerate with headrace-proto-gen."
 keywords = ["headrace", "grpc", "opentelemetry", "protobuf"]
 categories = ["network-programming"]
+readme = "README.md"
 
 [dependencies]
 tonic.workspace = true

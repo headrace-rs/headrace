@@ -9,6 +9,10 @@ keywords = ["opentelemetry", "observability", "streaming", "metrics", "otlp"]
 categories = ["network-programming", "development-tools"]
 readme = "README.md"
 
+[package.metadata.docs.rs]
+# Build the full API on docs.rs, including the otlp and inspect features.
+all-features = true
+
 [dependencies]
 headrace-ir.workspace = true
 serde.workspace = true
