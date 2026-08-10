@@ -108,3 +108,77 @@ jobs:
             --app-version "${{ needs.release.outputs.version }}"
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
           helm push dist/headrace-*.tgz "${{ env.CHART_REPO }}"
+
+  # Build prebuilt binaries for `cargo binstall` and attach them to the release, in the
+  # same run that cut it. Uses GITHUB_TOKEN, no manual setup. The asset naming
+  # (headrace-<target>.tar.gz, binary at the archive root) matches
+  # crates/headrace/Cargo.toml [package.metadata.binstall]. The build needs no protoc -
+  # the gRPC stubs are checked in - so cross-compilation is dependency-free.
+  binaries:
+    name: Binary (${{ matrix.target }})
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: aarch64-apple-darwin, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: headrace
+          target: ${{ matrix.target }}
+          archive: $bin-$target
+          tar: unix
+          ref: refs/tags/v${{ needs.release.outputs.version }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish the crates to crates.io in dependency order, in the same run that cut the
+  # release. DORMANT until launch - the `vars.PUBLISH_CRATES` gate keeps it off. To go
+  # live: (1) manually `cargo publish` each crate once to claim the names, (2) add a
+  # GitHub Actions trusted publisher for this repo + workflow on each crate's crates.io
+  # settings, (3) remove the `publish = false` lines from the crate manifests, (4) set the
+  # `PUBLISH_CRATES` repo variable to 'true'. Trusted publishing exchanges the OIDC token
+  # for a short-lived crates.io token, so no API-token secret is stored.
+  crates:
+    name: Publish to crates.io
+    needs: release
+    if: needs.release.outputs.released == 'true' && vars.PUBLISH_CRATES == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+      - uses: dtolnay/rust-toolchain@stable
+      # cargo publish requires a version on path deps; the repo keeps them version-free
+      # (so they never drift from the workspace version), so stamp the just-released
+      # version into the workspace path deps here, in the ephemeral checkout.
+      - name: Stamp the release version into workspace path dependencies
+        run: |
+          v='${{ needs.release.outputs.version }}'
+          perl -0pi -e "s{(headrace-(?:ir|core|proto) = \{ path = \"[^\"]+\")}{\$1, version = \"$v\"}g" Cargo.toml
+          grep -nE 'headrace-(ir|core|proto) =' Cargo.toml
+      - name: Authenticate to crates.io (trusted publishing)
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          for crate in headrace-ir headrace-proto headrace-core headrace; do
+            echo "::group::publish $crate"
+            cargo publish -p "$crate" --locked --allow-dirty
+            echo "::endgroup::"
+          done
