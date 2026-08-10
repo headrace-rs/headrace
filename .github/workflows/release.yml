@@ -144,11 +144,12 @@ jobs:
 
   # Publish the crates to crates.io in dependency order, in the same run that cut the
   # release. DORMANT until launch - the `vars.PUBLISH_CRATES` gate keeps it off. To go
-  # live: (1) manually `cargo publish` each crate once to claim the names, (2) add a
-  # GitHub Actions trusted publisher for this repo + workflow on each crate's crates.io
-  # settings, (3) remove the `publish = false` lines from the crate manifests, (4) set the
-  # `PUBLISH_CRATES` repo variable to 'true'. Trusted publishing exchanges the OIDC token
-  # for a short-lived crates.io token, so no API-token secret is stored.
+  # live: (1) manually `cargo publish -p <crate>` each crate once to claim the names, in
+  # the order below; (2) add a GitHub Actions trusted publisher for this repo + workflow
+  # on each crate's crates.io settings; (3) set the `PUBLISH_CRATES` repo variable to
+  # 'true'. Trusted publishing exchanges the OIDC token for a short-lived crates.io token,
+  # so no API-token secret is stored. Path-dep versions are kept in the manifest (bumped
+  # by knope), so no stamping is needed here.
   crates:
     name: Publish to crates.io
     needs: release
@@ -162,14 +163,6 @@ jobs:
         with:
           ref: v${{ needs.release.outputs.version }}
       - uses: dtolnay/rust-toolchain@stable
-      # cargo publish requires a version on path deps; the repo keeps them version-free
-      # (so they never drift from the workspace version), so stamp the just-released
-      # version into the workspace path deps here, in the ephemeral checkout.
-      - name: Stamp the release version into workspace path dependencies
-        run: |
-          v='${{ needs.release.outputs.version }}'
-          perl -0pi -e "s{(headrace-(?:ir|core|proto) = \{ path = \"[^\"]+\")}{\$1, version = \"$v\"}g" Cargo.toml
-          grep -nE 'headrace-(ir|core|proto) =' Cargo.toml
       - name: Authenticate to crates.io (trusted publishing)
         id: auth
         uses: rust-lang/crates-io-auth-action@v1
@@ -179,6 +172,6 @@ jobs:
         run: |
           for crate in headrace-ir headrace-proto headrace-core headrace; do
             echo "::group::publish $crate"
-            cargo publish -p "$crate" --locked --allow-dirty
+            cargo publish -p "$crate" --locked
             echo "::endgroup::"
           done
