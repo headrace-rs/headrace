@@ -4,14 +4,20 @@
 #
 # All crates share one version (version.workspace), so we manage the single version in
 # the root Cargo.toml ([workspace.package].version); Cargo inheritance carries it to
-# every crate. crates.io publishing is intentionally not configured until launch.
+# every crate. crates.io publishing runs from CI (release.yml), gated behind the
+# PUBLISH_CRATES variable until launch.
 
 [package]
-# The root Cargo.toml holds the shared workspace.package.version; every crate inherits
-# it. Cargo.lock records each member's version too, so keep those in sync or `--locked`
-# builds break after a bump.
+# Bump, in lockstep, every place the version appears: the shared
+# [workspace.package].version (inherited by each crate), the [workspace.dependencies]
+# path-dep versions (required by `cargo publish` and kept in sync here so they never
+# drift), and each member in Cargo.lock. Miss one and `--locked` builds or publishing
+# break after a bump.
 versioned_files = [
     "Cargo.toml",
+    { path = "Cargo.toml", dependency = "headrace-ir" },
+    { path = "Cargo.toml", dependency = "headrace-core" },
+    { path = "Cargo.toml", dependency = "headrace-proto" },
     { path = "Cargo.lock", dependency = "headrace" },
     { path = "Cargo.lock", dependency = "headrace-core" },
     { path = "Cargo.lock", dependency = "headrace-ir" },

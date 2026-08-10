@@ -8,7 +8,6 @@ description = "Headrace pipeline IR: the declarative schema for sources, transfo
 keywords = ["opentelemetry", "observability", "streaming", "pipeline", "schema"]
 categories = ["config", "development-tools"]
 readme = "README.md"
-publish = false
 
 [dependencies]
 serde.workspace = true

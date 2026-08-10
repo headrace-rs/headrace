@@ -8,10 +8,6 @@ description = "OTel-native, stateful stream processing in a single Rust binary."
 keywords = ["opentelemetry", "observability", "metrics", "streaming", "otlp"]
 categories = ["command-line-utilities", "network-programming"]
 readme = "README.md"
-# Not on crates.io yet. Launch: claim the names with a manual publish, add a crates.io
-# trusted publisher for the Release workflow, remove these publish = false lines, then set
-# the PUBLISH_CRATES repo variable (see release.yml `crates`).
-publish = false
 
 [package.metadata.binstall]
 # cargo-binstall fetches a prebuilt binary instead of compiling. The asset naming matches

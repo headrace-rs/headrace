@@ -15,9 +15,9 @@ license = "Apache-2.0"
 repository = "https://github.com/headrace-rs/headrace"
 
 [workspace.dependencies]
-headrace-ir = { path = "crates/headrace-ir" }
-headrace-core = { path = "crates/headrace-core" }
-headrace-proto = { path = "crates/headrace-proto" }
+headrace-ir = { path = "crates/headrace-ir", version = "0.1.13" }
+headrace-core = { path = "crates/headrace-core", version = "0.1.13" }
+headrace-proto = { path = "crates/headrace-proto", version = "0.1.13" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_norway = "0.9"

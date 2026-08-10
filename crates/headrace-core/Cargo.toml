@@ -8,7 +8,6 @@ description = "Core runtime for Headrace: IR execution, transforms, backends, OT
 keywords = ["opentelemetry", "observability", "streaming", "metrics", "otlp"]
 categories = ["network-programming", "development-tools"]
 readme = "README.md"
-publish = false
 
 [dependencies]
 headrace-ir.workspace = true
