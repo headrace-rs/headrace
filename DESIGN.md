@@ -384,6 +384,11 @@ Branding and logo: done.
    assignment (ADR-0008). The first deployment that needs an external backend.
 2. **WASM transform** - the escape hatch for custom logic.
 3. **Docs site** (Vocs or mdBook, mermaid) on Cloudflare Pages.
+4. **Transport security (TLS / mTLS)** - optional TLS on the OTLP receiver and the state
+   inspection endpoint, and mTLS on the internal backend edge. Until then those surfaces rely
+   on network placement (SECURITY.md) plus the receiver's resource caps (`max_recv_bytes`,
+   `max_concurrent_streams`); TLS is what makes them safe to cross a trust boundary. Scale-out
+   is the point this starts to matter, since it is the first topology with network hops.
 
 **v0.5 - durability and authoring:**
 
