@@ -15,11 +15,11 @@ use testcontainers::{GenericImage, ImageExt};
 #[tokio::test]
 #[ignore = "needs Docker; run in the Integration CI job with -- --ignored"]
 async fn records_round_trip_through_jetstream() {
-    // `-js` enables JetStream. NATS logs readiness to stdout; the connect retry below also
+    // `-js` enables JetStream. NATS logs readiness to stderr; the connect retry below also
     // absorbs any startup race.
     let container = GenericImage::new("nats", "2.10")
         .with_exposed_port(4222.tcp())
-        .with_wait_for(WaitFor::message_on_stdout("Server is ready"))
+        .with_wait_for(WaitFor::message_on_stderr("Server is ready"))
         .with_cmd(["-js"])
         .start()
         .await
@@ -87,7 +87,7 @@ async fn connect_waits_for_nats_then_recovers() {
 
     // Bring NATS up on the pinned port; connect then completes and the backend works.
     let _container = GenericImage::new("nats", "2.10")
-        .with_wait_for(WaitFor::message_on_stdout("Server is ready"))
+        .with_wait_for(WaitFor::message_on_stderr("Server is ready"))
         .with_mapped_port(port, 4222.tcp())
         .with_cmd(["-js"])
         .start()
