@@ -1,3 +1,9 @@
+## 0.1.15 (2026-08-11)
+
+### Features
+
+- add a single-worker JetStream backend
+
 ## 0.1.14 (2026-08-10)
 
 ### Features
