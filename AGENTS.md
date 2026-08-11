@@ -29,6 +29,8 @@ cargo test --workspace --all-features
 - Use [mermaid](https://mermaid.js.org/) for designs worth a picture.
 - Do not use the word "seam"; say boundary, interface, or extension point.
 - Do not use "bespoke"; say "custom".
+- Do not use "shuffle"; say "repartition" or describe the data movement directly.
+- Do not use "folds into"; say "applies to" or "aggregates".
 
 ## Commits
 
