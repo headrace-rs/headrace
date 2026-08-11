@@ -4,6 +4,12 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
+/// NATS JetStream backend for the scaled deployment (ADR-0015), behind the `nats` feature.
+#[cfg(feature = "nats")]
+mod nats;
+#[cfg(feature = "nats")]
+pub use nats::Nats;
+
 /// The partition/group key a record is published under, as raw bytes. A partitioned
 /// backend hashes it to route every record for a key to the same worker - and thus the
 /// same window state (DESIGN.md: group_key -> partition -> worker-local state). The

@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use headrace_core::backend::InProcess;
 use headrace_ir::Pipeline;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
@@ -14,6 +14,16 @@ use tracing_subscriber::EnvFilter;
 enum LogFormat {
     Text,
     Json,
+}
+
+/// Which backend carries records between nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum BackendKind {
+    /// In-memory channels; a single self-contained process (default).
+    #[value(name = "in-process")]
+    InProcess,
+    /// NATS JetStream: durable, partitioned edges for the scaled deployment.
+    Nats,
 }
 
 #[derive(Parser)]
@@ -48,6 +58,15 @@ enum Cmd {
         /// Off by default; exposes raw node state, so bind a trusted network only.
         #[arg(long, value_name = "ADDR")]
         inspect_addr: Option<SocketAddr>,
+        /// Record transport between nodes.
+        #[arg(long, value_enum, default_value = "in-process")]
+        backend: BackendKind,
+        /// NATS server URL for `--backend nats` (e.g. nats://127.0.0.1:4222).
+        #[arg(long, value_name = "URL")]
+        nats_url: Option<String>,
+        /// Pipeline name; namespaces the NATS subjects (default: the pipeline file stem).
+        #[arg(long)]
+        name: Option<String>,
     },
     /// Parse and statically check a pipeline.
     Validate { file: PathBuf },
@@ -74,7 +93,13 @@ async fn main() -> Result<()> {
     let _guard = init_tracing(&cli.log, cli.log_format);
 
     match cli.cmd {
-        Cmd::Run { file, inspect_addr } => {
+        Cmd::Run {
+            file,
+            inspect_addr,
+            backend,
+            nats_url,
+            name,
+        } => {
             let pipeline = load(&file)?;
             let telemetry = metrics::init(cli.metrics, cli.otlp_endpoint.clone())?;
             let recorder: headrace_core::SharedMetrics = match &telemetry {
@@ -82,7 +107,8 @@ async fn main() -> Result<()> {
                 None => Arc::new(headrace_core::NoopMetrics),
             };
             let opts = headrace_core::RunOptions { inspect_addr };
-            let result = headrace_core::run(pipeline, InProcess::default(), recorder, opts).await;
+            let result =
+                run_pipeline(pipeline, backend, nats_url, name, &file, recorder, opts).await;
             if let Some(t) = telemetry {
                 t.shutdown();
             }
@@ -192,6 +218,48 @@ fn load(file: &PathBuf) -> Result<Pipeline> {
     serde_norway::from_str(&text).with_context(|| format!("parsing {file:?}"))
 }
 
+/// Wire the pipeline onto the chosen backend and run it. `run` is generic over the backend,
+/// so each arm monomorphizes its own concrete type.
+async fn run_pipeline(
+    pipeline: Pipeline,
+    backend: BackendKind,
+    nats_url: Option<String>,
+    name: Option<String>,
+    file: &Path,
+    recorder: headrace_core::SharedMetrics,
+    opts: headrace_core::RunOptions,
+) -> Result<()> {
+    match backend {
+        BackendKind::InProcess => {
+            headrace_core::run(pipeline, InProcess::default(), recorder, opts).await
+        }
+        BackendKind::Nats => {
+            let url = nats_url.context("--backend nats requires --nats-url")?;
+            let name = name.unwrap_or_else(|| pipeline_name(file));
+            let outputs = output_ids(&pipeline);
+            let nats = headrace_core::backend::Nats::connect(&url, &name, &outputs).await?;
+            headrace_core::run(pipeline, nats, recorder, opts).await
+        }
+    }
+}
+
+/// Ids of nodes that produce an output stream: sources and transforms (sinks are terminal).
+fn output_ids(p: &Pipeline) -> Vec<String> {
+    p.sources
+        .iter()
+        .map(|s| s.id().to_string())
+        .chain(p.transforms.iter().map(|t| t.id().to_string()))
+        .collect()
+}
+
+/// Pipeline name defaulted from the file stem (`examples/latency.yaml` -> `latency`).
+fn pipeline_name(file: &Path) -> String {
+    file.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("headrace")
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,5 +319,23 @@ mod tests {
     #[test]
     fn render_handles_no_nodes() {
         assert_eq!(render(&[]), "no stateful nodes\n");
+    }
+
+    #[test]
+    fn output_ids_covers_sources_and_transforms_not_sinks() {
+        let p: Pipeline = serde_norway::from_str(
+            "sources: [{ type: generator, id: gen, interval: 1s }]\n\
+             transforms: [{ type: window, id: w, input: gen, size: 5s, aggregate: { op: count } }]\n\
+             sinks: [{ type: stdout, id: out, input: w }]\n",
+        )
+        .unwrap();
+        // Sinks are terminal, so they produce no stream to provision.
+        assert_eq!(output_ids(&p), vec!["gen".to_string(), "w".to_string()]);
+    }
+
+    #[test]
+    fn pipeline_name_defaults_to_the_file_stem() {
+        assert_eq!(pipeline_name(Path::new("examples/latency.yaml")), "latency");
+        assert_eq!(pipeline_name(Path::new("noext")), "noext");
     }
 }

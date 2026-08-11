@@ -64,6 +64,21 @@ fn validate_reports_a_missing_file() {
     assert!(!out.status.success(), "a missing file must be an error");
 }
 
+#[test]
+fn run_nats_without_url_is_rejected() {
+    // The backend selection is validated before anything connects, so this needs no server.
+    let file = write_tmp("cli_nats.yaml", GOOD);
+    let out = Command::new(BIN)
+        .args(["run", file.to_str().unwrap(), "--backend", "nats"])
+        .output()
+        .expect("run with nats backend");
+    assert!(!out.status.success(), "--backend nats needs --nats-url");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--nats-url"),
+        "the error should name the missing flag"
+    );
+}
+
 const GOOD: &str = "\
 sources: [{ type: generator, id: gen, interval: 200ms }]
 transforms: [{ type: window, id: w, input: gen, size: 5s, aggregate: { op: count } }]

@@ -22,7 +22,7 @@ path = "src/main.rs"
 
 [dependencies]
 headrace-ir.workspace = true
-headrace-core = { workspace = true, features = ["otlp", "inspect"] }
+headrace-core = { workspace = true, features = ["otlp", "inspect", "nats"] }
 headrace-proto.workspace = true
 serde_norway.workspace = true
 anyhow.workspace = true

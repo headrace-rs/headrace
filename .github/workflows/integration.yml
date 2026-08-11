@@ -1,0 +1,25 @@
+name: Integration
+
+# End-to-end tests that need Docker (spun up by testcontainers), kept out of the main CI
+# job so unit tests stay fast. Runs the `#[ignore]`d integration tests with `--ignored`.
+on:
+  push:
+    branches: [main]
+    paths: ["**/*.rs", "**/Cargo.toml", "Cargo.lock", ".github/workflows/integration.yml"]
+  pull_request:
+    paths: ["**/*.rs", "**/Cargo.toml", "Cargo.lock", ".github/workflows/integration.yml"]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  nats:
+    name: NATS backend (JetStream)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: NATS backend end-to-end
+        run: cargo test --locked -p headrace-core --features nats --test nats_e2e -- --ignored --nocapture

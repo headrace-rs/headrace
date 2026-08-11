@@ -50,6 +50,54 @@ Run a pipeline:
 cargo run -p headrace -- run examples/latency.yaml
 ```
 
+### Running against NATS (scaled backend)
+
+The default backend is in-process. To use the NATS JetStream backend (ADR-0015) you need a
+JetStream-enabled NATS server. Start one with Docker:
+
+```shell
+docker run --rm -p 4222:4222 nats:2.10 -js
+```
+
+or the standalone binary (`brew install nats-server`):
+
+```shell
+nats-server -js
+```
+
+Then run a pipeline over it - the `headrace` binary always includes the NATS backend, so no
+extra feature flag is needed:
+
+```shell
+cargo run -p headrace -- run examples/latency.yaml \
+  --backend nats --nats-url nats://127.0.0.1:4222
+```
+
+Headrace provisions a work-queue stream per node output (subject `hr.<name>.<node>`, where
+`<name>` defaults to the pipeline file stem or is set with `--name`) on startup. Inspect them
+with the [`nats`](https://github.com/nats-io/natscli) CLI:
+
+```shell
+nats stream ls        # the hr_<name>_<node> streams
+nats stream report
+```
+
+Payloads are MessagePack. Decode one to JSON with `msgpack2json` from
+[`msgpack-tools`](https://github.com/ludocode/msgpack-tools) (reads stdin); `--raw` prints just
+the payload and `--count 1` takes a single message:
+
+```shell
+brew install msgpack-tools
+nats sub --raw --count 1 'hr.>' | msgpack2json
+```
+
+The end-to-end backend test spins up NATS itself via testcontainers; it is `#[ignore]`d, so it
+needs Docker and `--ignored`:
+
+```shell
+cargo test -p headrace-core --features nats --test nats_e2e -- --ignored --nocapture
+```
+
 Install [prek](https://github.com/j178/prek) and enable the git hooks once. They run typos
 and rustfmt on commit, a Conventional Commits check on the message, and clippy on push:
 
