@@ -1,26 +1,83 @@
 //! NATS JetStream backend (ADR-0003, ADR-0015): a durable, back-pressured edge between
-//! nodes for the scaled deployment. Stage 1 (here) is a single worker over JetStream:
-//! one work-queue stream per node output, a durable pull consumer per input, records on
-//! the wire as MessagePack, and at-least-once delivery via ack-after-processing. Static
-//! partitioning across workers is stage 2.
+//! nodes for the scaled deployment. Records cross the wire as MessagePack, delivery is
+//! at-least-once via ack-after-processing, and each edge is a work-queue stream split into
+//! `P` partitions. A record is routed by `hash(key) % P` (fixed key-groups, the Flink
+//! model, ADR-0008), computed client-side so provisioning stays self-contained and the
+//! partition math is a pure function. Worker `i` of `N` owns the partitions where
+//! `p % N == i`, so every record for a key lands on one worker and its keyed state never
+//! moves. A single worker (`N = 1`) owns all partitions, which is the single-worker case.
 //!
-//! The deterministic parts - subject/stream naming, the codec, the stream and consumer
-//! config - are pure functions, unit-tested below. Only the thin async glue (connect,
-//! publish, pull) needs a live server, and it is covered by the `nats_e2e` integration test.
+//! The deterministic parts - subject/stream naming, the codec, the partition math, the
+//! stream and consumer config - are pure functions, unit-tested below. Only the thin async
+//! glue (connect, publish, pull) needs a live server, covered by the `nats_e2e` test.
 
 use crate::backend::{Backend, Consumer, KeySpec, Producer};
-use crate::record::Record;
-use anyhow::{Context, Result};
+use crate::record::{AttrValue, Record};
+use anyhow::{Context, Result, bail};
 use async_nats::ConnectOptions;
 use async_nats::jetstream::{self, consumer::pull, stream};
 use async_trait::async_trait;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
-use tokio_stream::StreamExt;
+use tokio_stream::{StreamExt, StreamMap};
 
-/// The subject a node's output records are published to. `<pipeline>` namespaces subjects so
-/// many pipelines can share one cluster.
-fn subject(pipeline: &str, node: &str) -> String {
-    format!("hr.{pipeline}.{node}")
+/// How an edge's `P` partitions are split across workers. `partitions` is fixed for the
+/// life of a stream; `index` of `workers` identifies this worker (a StatefulSet ordinal in
+/// Kubernetes). A single worker (`workers == 1`) owns every partition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PartitionConfig {
+    pub partitions: u32,
+    pub workers: u32,
+    pub index: u32,
+}
+
+impl PartitionConfig {
+    /// Reject shapes that cannot describe a valid assignment. `workers <= partitions` keeps
+    /// every worker busy (a worker with no partitions would idle); changing `workers` needs
+    /// a restart and does not migrate state (ADR-0008).
+    pub fn validate(&self) -> Result<()> {
+        if self.partitions == 0 {
+            bail!("partitions must be >= 1");
+        }
+        if self.workers == 0 {
+            bail!("workers must be >= 1");
+        }
+        if self.index >= self.workers {
+            bail!(
+                "worker-index {} must be < workers {}",
+                self.index,
+                self.workers
+            );
+        }
+        if self.workers > self.partitions {
+            bail!(
+                "workers {} must be <= partitions {}",
+                self.workers,
+                self.partitions
+            );
+        }
+        Ok(())
+    }
+
+    /// The partitions this worker owns: `{ p in 0..P : p % N == index }`. Across all workers
+    /// these are disjoint and cover `0..P`.
+    fn owned(&self) -> Vec<u32> {
+        (0..self.partitions)
+            .filter(|p| p % self.workers == self.index)
+            .collect()
+    }
+}
+
+/// The subject partition `p` of a node's output records is published to. `<pipeline>`
+/// namespaces subjects so many pipelines can share one cluster.
+fn subject(pipeline: &str, node: &str, p: u32) -> String {
+    format!("hr.{pipeline}.{node}.{p}")
+}
+
+/// The subject wildcard covering every partition of a node's output, for the stream.
+fn wildcard_subject(pipeline: &str, node: &str) -> String {
+    format!("hr.{pipeline}.{node}.*")
 }
 
 /// The JetStream stream name for a node output. Stream names cannot contain `.`, so the
@@ -29,26 +86,29 @@ fn stream_name(pipeline: &str, node: &str) -> String {
     format!("hr_{pipeline}_{node}")
 }
 
-/// The durable pull-consumer name for a node output (its single downstream reader).
-fn durable_name(pipeline: &str, node: &str) -> String {
-    format!("{}_sink", stream_name(pipeline, node))
+/// The durable pull-consumer name for one partition of a node output (its single reader).
+fn durable_name(pipeline: &str, node: &str, p: u32) -> String {
+    format!("{}_{p}_sink", stream_name(pipeline, node))
 }
 
-/// The work-queue stream config for a node output: a record leaves the stream once its
-/// single consumer acks it, matching the runtime's one-consumer-per-output rule.
+/// The work-queue stream config for a node output: it captures every partition subject, and
+/// a record leaves the stream once its single (per-partition) consumer acks it.
 fn stream_config(pipeline: &str, node: &str) -> stream::Config {
     stream::Config {
         name: stream_name(pipeline, node),
-        subjects: vec![subject(pipeline, node)],
+        subjects: vec![wildcard_subject(pipeline, node)],
         retention: stream::RetentionPolicy::WorkQueue,
         ..Default::default()
     }
 }
 
-/// The durable pull-consumer config. Explicit acks drive the ack-after-processing model.
-fn consumer_config(durable: &str) -> pull::Config {
+/// The durable pull-consumer config for one partition. The `filter_subject` binds it to a
+/// single partition; work-queue retention requires consumers to have non-overlapping
+/// filters, which per-partition subjects satisfy. Explicit acks drive ack-after-processing.
+fn consumer_config(durable: &str, filter_subject: String) -> pull::Config {
     pull::Config {
         durable_name: Some(durable.to_string()),
+        filter_subject,
         ack_policy: jetstream::consumer::AckPolicy::Explicit,
         ..Default::default()
     }
@@ -62,6 +122,62 @@ fn decode(payload: &[u8]) -> Result<Record> {
     rmp_serde::from_slice(payload).context("decoding record")
 }
 
+/// Canonical bytes for a record's key under `group_by`, in field order. Each field is a type
+/// tag plus its value (length-prefixed for strings, so `["a","bc"]` and `["ab","c"]` differ),
+/// and an absent field is a distinct tag. Types stay distinct (`Int(1)` != `Str("1")`); this
+/// need not equal the window's in-memory group key, only be identical on every edge so a key
+/// routes to the same partition throughout the graph.
+fn key_bytes(rec: &Record, group_by: &[String]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    for field in group_by {
+        match rec.lookup(field) {
+            None => buf.push(0),
+            Some(AttrValue::Bool(b)) => {
+                buf.push(1);
+                buf.push(*b as u8);
+            }
+            Some(AttrValue::Int(i)) => {
+                buf.push(2);
+                buf.extend_from_slice(&i.to_le_bytes());
+            }
+            Some(AttrValue::Double(d)) => {
+                buf.push(3);
+                buf.extend_from_slice(&d.to_bits().to_le_bytes());
+            }
+            Some(AttrValue::Str(s)) => {
+                buf.push(4);
+                buf.extend_from_slice(&(s.len() as u64).to_le_bytes());
+                buf.extend_from_slice(s.as_bytes());
+            }
+        }
+    }
+    buf
+}
+
+/// The partition a key routes to: FNV-1a-64 over the key, modulo `partitions`. Hand-rolled
+/// so it is stable across versions and platforms (std's `DefaultHasher` is neither), which a
+/// networked, rolling-upgraded backend needs. `partitions` is `>= 1` (checked at connect).
+fn partition(key: &[u8], partitions: u32) -> u32 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut h = OFFSET;
+    for &b in key {
+        h ^= b as u64;
+        h = h.wrapping_mul(PRIME);
+    }
+    (h % partitions as u64) as u32
+}
+
+/// The partition a producer sends `rec` to: a keyed edge hashes the record's key so its
+/// state co-locates on one worker; an unkeyed edge (feeding a stateless node) round-robins
+/// `rr` for an even spread.
+fn route(key: &KeySpec, rec: &Record, partitions: u32, rr: &AtomicU32) -> u32 {
+    match key {
+        KeySpec::Keyed(fields) => partition(&key_bytes(rec, fields), partitions),
+        KeySpec::Unkeyed => rr.fetch_add(1, Ordering::Relaxed) % partitions,
+    }
+}
+
 /// Exponential backoff for a retry loop, capped at 5s: 100ms, 200ms, 400ms, ... 5s, 5s.
 fn backoff(attempt: u32) -> Duration {
     let ms = 100u64.saturating_mul(1u64 << attempt.min(6));
@@ -73,13 +189,21 @@ fn backoff(attempt: u32) -> Duration {
 pub struct Nats {
     js: jetstream::Context,
     pipeline: String,
+    part: PartitionConfig,
 }
 
 impl Nats {
     /// Connect to `url` and ensure a work-queue stream for each output edge (`outputs` are
     /// the ids of nodes that produce a stream: sources and transforms). Idempotent, so a
-    /// restart or a second worker reuses the existing streams.
-    pub async fn connect(url: &str, pipeline: &str, outputs: &[String]) -> Result<Self> {
+    /// restart or another worker reuses the existing streams. `part` must be valid (see
+    /// [`PartitionConfig::validate`]); the caller checks it so a bad shape fails before any
+    /// network I/O.
+    pub async fn connect(
+        url: &str,
+        pipeline: &str,
+        outputs: &[String],
+        part: PartitionConfig,
+    ) -> Result<Self> {
         // `retry_on_initial_connect` returns a client that connects in the background, so a
         // NATS that is not up yet at startup is waited for rather than a fatal error.
         let client = ConnectOptions::new()
@@ -105,16 +229,20 @@ impl Nats {
         Ok(Self {
             js,
             pipeline: pipeline.to_string(),
+            part,
         })
     }
 }
 
 impl Backend for Nats {
-    fn producer(&mut self, id: &str, _key: &KeySpec) -> Box<dyn Producer> {
-        // Stage 1 is single-partition; the key drives routing in stage 2.
+    fn producer(&mut self, id: &str, key: &KeySpec) -> Box<dyn Producer> {
         Box::new(NatsProducer {
             js: self.js.clone(),
-            subject: subject(&self.pipeline, id),
+            pipeline: self.pipeline.clone(),
+            node: id.to_string(),
+            key: key.clone(),
+            partitions: self.part.partitions,
+            rr: AtomicU32::new(0),
         })
     }
 
@@ -122,8 +250,10 @@ impl Backend for Nats {
         Box::new(NatsConsumer {
             js: self.js.clone(),
             stream: stream_name(&self.pipeline, id),
-            durable: durable_name(&self.pipeline, id),
-            messages: None,
+            pipeline: self.pipeline.clone(),
+            node: id.to_string(),
+            partitions: self.part.owned(),
+            streams: None,
             last: None,
         })
     }
@@ -131,14 +261,19 @@ impl Backend for Nats {
 
 struct NatsProducer {
     js: jetstream::Context,
-    subject: String,
+    pipeline: String,
+    node: String,
+    key: KeySpec,
+    partitions: u32,
+    /// Round-robin cursor for unkeyed edges, so their records spread evenly.
+    rr: AtomicU32,
 }
 
 impl NatsProducer {
     /// One publish attempt: enqueue and await the JetStream ack (record durably stored).
-    async fn publish(&self, payload: &[u8]) -> Result<()> {
+    async fn publish(&self, subject: &str, payload: &[u8]) -> Result<()> {
         self.js
-            .publish(self.subject.clone(), payload.to_vec().into())
+            .publish(subject.to_string(), payload.to_vec().into())
             .await
             .context("publishing to NATS")?
             .await
@@ -150,16 +285,18 @@ impl NatsProducer {
 #[async_trait]
 impl Producer for NatsProducer {
     async fn send(&self, rec: Record) -> Result<()> {
+        let p = route(&self.key, &rec, self.partitions, &self.rr);
+        let subj = subject(&self.pipeline, &self.node, p);
         let payload = encode(&rec)?;
         // Retry through a NATS outage rather than failing the node: the client reconnects
         // underneath, so this back-pressures the pipeline until the publish is durably acked.
         // At-least-once (ADR-0015) makes a duplicate from an uncertain ack acceptable.
         let mut attempt = 0;
         loop {
-            match self.publish(&payload).await {
+            match self.publish(&subj, &payload).await {
                 Ok(()) => return Ok(()),
                 Err(e) => {
-                    tracing::warn!(subject = %self.subject, error = %e, "NATS publish failed; retrying");
+                    tracing::warn!(subject = %subj, error = %e, "NATS publish failed; retrying");
                     tokio::time::sleep(backoff(attempt)).await;
                     attempt += 1;
                 }
@@ -168,30 +305,50 @@ impl Producer for NatsProducer {
     }
 }
 
+/// One partition's pull stream. Boxed and pinned so a [`StreamMap`] can own several and poll
+/// them together.
+type PartStream = Pin<Box<pull::Stream>>;
+
 struct NatsConsumer {
     js: jetstream::Context,
     stream: String,
-    durable: String,
-    /// The pull message stream, bound lazily on first `recv` so `consumer()` stays cheap.
-    messages: Option<pull::Stream>,
+    pipeline: String,
+    node: String,
+    /// The partitions this worker owns for this edge.
+    partitions: Vec<u32>,
+    /// The owned partitions' message streams, merged and bound lazily on first `recv` so
+    /// `consumer()` stays cheap.
+    streams: Option<StreamMap<u32, PartStream>>,
     /// The previous message, acked on the next `recv` once the node has processed it
-    /// (ack-after-processing; ADR-0015).
+    /// (ack-after-processing; ADR-0015). Acking is per-message, so tracking one is correct
+    /// no matter which partition it came from.
     last: Option<jetstream::Message>,
 }
 
 impl NatsConsumer {
-    /// Bind (creating if needed) the durable pull consumer and open its message stream.
-    async fn bind(&self) -> Result<pull::Stream> {
+    /// Bind (creating if needed) one durable pull consumer per owned partition and merge
+    /// their message streams.
+    async fn bind(&self) -> Result<StreamMap<u32, PartStream>> {
         let stream = self
             .js
             .get_stream(&self.stream)
             .await
             .context("getting stream")?;
-        let consumer = stream
-            .get_or_create_consumer(&self.durable, consumer_config(&self.durable))
-            .await
-            .context("getting consumer")?;
-        consumer.messages().await.context("opening message stream")
+        let mut map = StreamMap::new();
+        for &p in &self.partitions {
+            let durable = durable_name(&self.pipeline, &self.node, p);
+            let filter = subject(&self.pipeline, &self.node, p);
+            let consumer = stream
+                .get_or_create_consumer(&durable, consumer_config(&durable, filter))
+                .await
+                .context("getting consumer")?;
+            let messages = consumer
+                .messages()
+                .await
+                .context("opening message stream")?;
+            map.insert(p, Box::pin(messages));
+        }
+        Ok(map)
     }
 }
 
@@ -200,10 +357,10 @@ impl Consumer for NatsConsumer {
     async fn recv(&mut self) -> Option<Record> {
         let mut attempt = 0;
         loop {
-            if self.messages.is_none() {
+            if self.streams.is_none() {
                 match self.bind().await {
                     Ok(m) => {
-                        self.messages = Some(m);
+                        self.streams = Some(m);
                         attempt = 0;
                     }
                     Err(e) => {
@@ -218,8 +375,8 @@ impl Consumer for NatsConsumer {
             if let Some(prev) = self.last.take() {
                 let _ = prev.ack().await;
             }
-            match self.messages.as_mut().expect("just bound").next().await {
-                Some(Ok(msg)) => match decode(&msg.payload) {
+            match self.streams.as_mut().expect("just bound").next().await {
+                Some((_p, Ok(msg))) => match decode(&msg.payload) {
                     Ok(rec) => {
                         self.last = Some(msg);
                         return Some(rec);
@@ -231,17 +388,17 @@ impl Consumer for NatsConsumer {
                         let _ = msg.ack().await;
                     }
                 },
-                // A transient error (e.g. a reconnect) - rebind and keep consuming rather
-                // than reporting end-of-stream, which would stop the node.
-                Some(Err(e)) => {
+                // A transient error (e.g. a reconnect) - rebind all partitions and keep
+                // consuming rather than reporting end-of-stream, which would stop the node.
+                Some((_p, Err(e))) => {
                     tracing::warn!(stream = %self.stream, error = %e, "NATS consume error; rebinding");
-                    self.messages = None;
+                    self.streams = None;
                     tokio::time::sleep(backoff(attempt)).await;
                     attempt += 1;
                 }
-                // A durable pull stream is open-ended; if it ends, rebind.
+                // Every owned partition's durable stream ended; rebind.
                 None => {
-                    self.messages = None;
+                    self.streams = None;
                     tokio::time::sleep(backoff(attempt)).await;
                     attempt += 1;
                 }
@@ -253,33 +410,154 @@ impl Consumer for NatsConsumer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record::{AttrValue, Attrs};
+    use crate::record::Attrs;
 
     #[test]
     fn names_are_derived_consistently() {
-        assert_eq!(subject("latency", "w"), "hr.latency.w");
+        assert_eq!(subject("latency", "w", 3), "hr.latency.w.3");
+        assert_eq!(wildcard_subject("latency", "w"), "hr.latency.w.*");
         // Stream and consumer names swap the subject's dots for underscores (JetStream
         // forbids dots in them).
         assert_eq!(stream_name("latency", "w"), "hr_latency_w");
-        assert_eq!(durable_name("latency", "w"), "hr_latency_w_sink");
+        assert_eq!(durable_name("latency", "w", 3), "hr_latency_w_3_sink");
     }
 
     #[test]
-    fn stream_config_is_a_work_queue_over_the_node_subject() {
+    fn stream_config_is_a_work_queue_over_the_partition_wildcard() {
         let cfg = stream_config("latency", "w");
         assert_eq!(cfg.name, "hr_latency_w");
-        assert_eq!(cfg.subjects, vec!["hr.latency.w".to_string()]);
+        assert_eq!(cfg.subjects, vec!["hr.latency.w.*".to_string()]);
         assert!(matches!(cfg.retention, stream::RetentionPolicy::WorkQueue));
     }
 
     #[test]
-    fn consumer_config_uses_explicit_acks() {
-        let cfg = consumer_config("hr_latency_w_sink");
-        assert_eq!(cfg.durable_name.as_deref(), Some("hr_latency_w_sink"));
+    fn consumer_config_filters_to_one_partition_with_explicit_acks() {
+        let cfg = consumer_config("hr_latency_w_3_sink", "hr.latency.w.3".to_string());
+        assert_eq!(cfg.durable_name.as_deref(), Some("hr_latency_w_3_sink"));
+        assert_eq!(cfg.filter_subject, "hr.latency.w.3");
         assert!(matches!(
             cfg.ack_policy,
             jetstream::consumer::AckPolicy::Explicit
         ));
+    }
+
+    #[test]
+    fn partition_is_deterministic_and_in_range() {
+        let key = key_bytes(&svc_rec("checkout"), &["service.name".into()]);
+        let p = partition(&key, 12);
+        assert!(p < 12);
+        // Same key, same partition - the property routing relies on.
+        assert_eq!(partition(&key, 12), p);
+        // Every key lands in range for a range of partition counts.
+        for name in ["checkout", "cart", "search", "", "a-very-long-service-name"] {
+            let k = key_bytes(&svc_rec(name), &["service.name".into()]);
+            for n in [1u32, 3, 7, 12, 64] {
+                assert!(partition(&k, n) < n);
+            }
+        }
+    }
+
+    #[test]
+    fn key_bytes_is_typed_order_sensitive_and_distinguishes_absence() {
+        let by = |r: &Record, f: &[&str]| {
+            key_bytes(r, &f.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+        };
+        // Empty group_by (global aggregation) has an empty, so constant, key.
+        assert!(by(&svc_rec("checkout"), &[]).is_empty());
+        // Types are distinct: Int(1) must not encode like Str("1").
+        let int_rec = one("k", AttrValue::Int(1));
+        let str_rec = one("k", AttrValue::Str("1".into()));
+        assert_ne!(by(&int_rec, &["k"]), by(&str_rec, &["k"]));
+        // An absent field is distinct from any present value, and from a different absence.
+        assert_ne!(by(&svc_rec("checkout"), &["k"]), by(&int_rec, &["k"]));
+        // Field order matters, so co-partitioning depends on a stable declared order.
+        let ab = one_of(&[("a", AttrValue::Int(1)), ("b", AttrValue::Int(2))]);
+        assert_ne!(by(&ab, &["a", "b"]), by(&ab, &["b", "a"]));
+    }
+
+    #[test]
+    fn route_hashes_keyed_edges_and_round_robins_unkeyed() {
+        let rec = svc_rec("checkout");
+        // Keyed: deterministic, and equal to the partition of the key bytes.
+        let keyed = KeySpec::Keyed(vec!["service.name".into()]);
+        let rr = AtomicU32::new(0);
+        let want = partition(&key_bytes(&rec, &["service.name".into()]), 6);
+        assert_eq!(route(&keyed, &rec, 6, &rr), want);
+        assert_eq!(
+            route(&keyed, &rec, 6, &rr),
+            want,
+            "same key, same partition"
+        );
+        // Unkeyed: round-robins across the partitions, wrapping at the count.
+        let rr = AtomicU32::new(0);
+        let seq: Vec<u32> = (0..7)
+            .map(|_| route(&KeySpec::Unkeyed, &rec, 3, &rr))
+            .collect();
+        assert_eq!(seq, vec![0, 1, 2, 0, 1, 2, 0]);
+    }
+
+    #[test]
+    fn owned_partitions_split_disjointly_and_cover_all() {
+        let (partitions, workers) = (12u32, 3u32);
+        let mut union = Vec::new();
+        for index in 0..workers {
+            let owned = PartitionConfig {
+                partitions,
+                workers,
+                index,
+            }
+            .owned();
+            assert!(owned.iter().all(|p| p % workers == index));
+            union.extend(owned);
+        }
+        union.sort_unstable();
+        assert_eq!(union, (0..partitions).collect::<Vec<_>>());
+        // A single worker owns everything (the single-worker case).
+        assert_eq!(
+            PartitionConfig {
+                partitions: 12,
+                workers: 1,
+                index: 0
+            }
+            .owned()
+            .len(),
+            12
+        );
+    }
+
+    #[test]
+    fn partition_config_validate_rejects_bad_shapes() {
+        let ok = PartitionConfig {
+            partitions: 12,
+            workers: 3,
+            index: 2,
+        };
+        assert!(ok.validate().is_ok());
+        // index out of range, too many workers, and empty counts are all rejected.
+        for bad in [
+            PartitionConfig {
+                partitions: 12,
+                workers: 3,
+                index: 3,
+            },
+            PartitionConfig {
+                partitions: 4,
+                workers: 8,
+                index: 0,
+            },
+            PartitionConfig {
+                partitions: 0,
+                workers: 1,
+                index: 0,
+            },
+            PartitionConfig {
+                partitions: 12,
+                workers: 0,
+                index: 0,
+            },
+        ] {
+            assert!(bad.validate().is_err(), "{bad:?} should be rejected");
+        }
     }
 
     #[test]
@@ -294,24 +572,35 @@ mod tests {
 
     #[test]
     fn record_round_trips_through_messagepack() {
-        let mut attrs = Attrs::new();
-        attrs.insert("service.name".into(), AttrValue::Str("checkout".into()));
-        let rec = Record {
+        let rec = svc_rec("checkout");
+        let back = decode(&encode(&rec).unwrap()).unwrap();
+        assert_eq!(back.name, "latency");
+        assert_eq!(
+            back.attrs.get("service.name"),
+            Some(&AttrValue::Str("checkout".into()))
+        );
+    }
+
+    fn svc_rec(svc: &str) -> Record {
+        one("service.name", AttrValue::Str(svc.into()))
+    }
+
+    fn one(key: &str, value: AttrValue) -> Record {
+        one_of(&[(key, value)])
+    }
+
+    fn one_of(attrs: &[(&str, AttrValue)]) -> Record {
+        Record {
             ts_nanos: 42,
             start_ts_nanos: Some(0),
             resource: Attrs::new(),
             scope: None,
             name: "latency".into(),
             value: 3.5,
-            attrs,
-        };
-        let back = decode(&encode(&rec).unwrap()).unwrap();
-        assert_eq!(back.ts_nanos, 42);
-        assert_eq!(back.name, "latency");
-        assert_eq!(back.value, 3.5);
-        assert_eq!(
-            back.attrs.get("service.name"),
-            Some(&AttrValue::Str("checkout".into()))
-        );
+            attrs: attrs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        }
     }
 }

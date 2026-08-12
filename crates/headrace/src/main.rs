@@ -67,6 +67,15 @@ enum Cmd {
         /// Pipeline name; namespaces the NATS subjects (default: the pipeline file stem).
         #[arg(long)]
         name: Option<String>,
+        /// Partitions per edge for `--backend nats` (fixed key-groups; ADR-0015).
+        #[arg(long, default_value_t = 12)]
+        partitions: u32,
+        /// Total workers sharing the partitions; this process is one of them.
+        #[arg(long, default_value_t = 1)]
+        workers: u32,
+        /// This worker's index in `0..workers` (e.g. a StatefulSet ordinal).
+        #[arg(long, env = "HEADRACE_WORKER_INDEX", default_value_t = 0)]
+        worker_index: u32,
     },
     /// Parse and statically check a pipeline.
     Validate { file: PathBuf },
@@ -99,6 +108,9 @@ async fn main() -> Result<()> {
             backend,
             nats_url,
             name,
+            partitions,
+            workers,
+            worker_index,
         } => {
             let pipeline = load(&file)?;
             let telemetry = metrics::init(cli.metrics, cli.otlp_endpoint.clone())?;
@@ -107,8 +119,16 @@ async fn main() -> Result<()> {
                 None => Arc::new(headrace_core::NoopMetrics),
             };
             let opts = headrace_core::RunOptions { inspect_addr };
-            let result =
-                run_pipeline(pipeline, backend, nats_url, name, &file, recorder, opts).await;
+            let nats = NatsOpts {
+                url: nats_url,
+                name,
+                part: headrace_core::backend::PartitionConfig {
+                    partitions,
+                    workers,
+                    index: worker_index,
+                },
+            };
+            let result = run_pipeline(pipeline, backend, nats, &file, recorder, opts).await;
             if let Some(t) = telemetry {
                 t.shutdown();
             }
@@ -218,13 +238,19 @@ fn load(file: &PathBuf) -> Result<Pipeline> {
     serde_norway::from_str(&text).with_context(|| format!("parsing {file:?}"))
 }
 
+/// NATS backend options from the CLI, used only with `--backend nats`.
+struct NatsOpts {
+    url: Option<String>,
+    name: Option<String>,
+    part: headrace_core::backend::PartitionConfig,
+}
+
 /// Wire the pipeline onto the chosen backend and run it. `run` is generic over the backend,
 /// so each arm monomorphizes its own concrete type.
 async fn run_pipeline(
     pipeline: Pipeline,
     backend: BackendKind,
-    nats_url: Option<String>,
-    name: Option<String>,
+    nats: NatsOpts,
     file: &Path,
     recorder: headrace_core::SharedMetrics,
     opts: headrace_core::RunOptions,
@@ -234,10 +260,12 @@ async fn run_pipeline(
             headrace_core::run(pipeline, InProcess::default(), recorder, opts).await
         }
         BackendKind::Nats => {
-            let url = nats_url.context("--backend nats requires --nats-url")?;
-            let name = name.unwrap_or_else(|| pipeline_name(file));
+            nats.part.validate()?;
+            let url = nats.url.context("--backend nats requires --nats-url")?;
+            let name = nats.name.unwrap_or_else(|| pipeline_name(file));
             let outputs = output_ids(&pipeline);
-            let nats = headrace_core::backend::Nats::connect(&url, &name, &outputs).await?;
+            let nats =
+                headrace_core::backend::Nats::connect(&url, &name, &outputs, nats.part).await?;
             headrace_core::run(pipeline, nats, recorder, opts).await
         }
     }
@@ -337,5 +365,35 @@ mod tests {
     fn pipeline_name_defaults_to_the_file_stem() {
         assert_eq!(pipeline_name(Path::new("examples/latency.yaml")), "latency");
         assert_eq!(pipeline_name(Path::new("noext")), "noext");
+    }
+
+    #[tokio::test]
+    async fn run_pipeline_rejects_an_invalid_partition_config() {
+        // A bad partition shape must fail fast, before any network connect.
+        let p: Pipeline = serde_norway::from_str(
+            "sources: [{ type: generator, id: g, interval: 1s }]\n\
+             sinks: [{ type: stdout, id: o, input: g }]\n",
+        )
+        .unwrap();
+        let nats = NatsOpts {
+            url: Some("nats://127.0.0.1:4222".into()),
+            name: None,
+            part: headrace_core::backend::PartitionConfig {
+                partitions: 2,
+                workers: 4,
+                index: 0,
+            },
+        };
+        let err = run_pipeline(
+            p,
+            BackendKind::Nats,
+            nats,
+            Path::new("x.yaml"),
+            Arc::new(headrace_core::NoopMetrics),
+            headrace_core::RunOptions::default(),
+        )
+        .await
+        .expect_err("an invalid partition config must be rejected");
+        assert!(err.to_string().contains("workers"), "{err}");
     }
 }
