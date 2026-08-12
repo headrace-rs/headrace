@@ -2,7 +2,7 @@
 //! snapshot reflects the folds already applied and never races the aggregation. This
 //! exercises the async driver's inspect arm, which the pure-`Window` unit tests don't.
 
-use headrace_core::backend::{Backend, InProcess};
+use headrace_core::backend::{Backend, InProcess, KeySpec};
 use headrace_core::inspect::{Inspect, NodeSnapshot, Query};
 use headrace_core::metrics::{NodeKind, NodeMetrics};
 use headrace_core::record::{Attrs, Record};
@@ -16,9 +16,9 @@ const SEC: u64 = 1_000_000_000;
 #[tokio::test]
 async fn window_answers_a_query_from_its_own_loop() {
     let mut be = InProcess::new(64);
-    let feed = be.producer("in");
+    let feed = be.producer("in", &KeySpec::Unkeyed);
     let win_rx = be.consumer("in");
-    let win_tx = be.producer("w");
+    let win_tx = be.producer("w", &KeySpec::Unkeyed);
     let mut out = be.consumer("w");
     drop(be);
 
@@ -40,9 +40,9 @@ async fn window_answers_a_query_from_its_own_loop() {
 
     // Three records in [0, 5s), then one at 6s that advances the watermark and fires it.
     for _ in 0..3 {
-        feed.send(None, rec_at(SEC)).await.unwrap();
+        feed.send(rec_at(SEC)).await.unwrap();
     }
-    feed.send(None, rec_at(6 * SEC)).await.unwrap();
+    feed.send(rec_at(6 * SEC)).await.unwrap();
 
     // Reading the flush proves the loop has processed past the 6s record - so [5s, 10s) is
     // now the one open window, holding that single record. This makes the query race-free:
@@ -62,7 +62,7 @@ async fn window_answers_a_query_from_its_own_loop() {
     // Every Handle dropped: the node stops polling for queries but keeps running - a later
     // watermark advance still fires the open window.
     drop(handle);
-    feed.send(None, rec_at(11 * SEC)).await.unwrap();
+    feed.send(rec_at(11 * SEC)).await.unwrap();
     let flushed = out
         .recv()
         .await

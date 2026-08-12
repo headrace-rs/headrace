@@ -26,7 +26,7 @@ pub(super) async fn run(
     while let Some(rec) = rx.recv().await {
         if keep(&rec, &key, &equals) {
             nm.out();
-            if tx.send(None, rec).await.is_err() {
+            if tx.send(rec).await.is_err() {
                 break;
             }
         } else {
@@ -105,15 +105,14 @@ mod backend_tests {
             .in_sequence(&mut seq)
             .returning(|| None);
 
-        // Producer must receive exactly the checkout record, unkeyed (in-process).
+        // Producer must receive exactly the checkout record.
         let mut tx = MockProducer::new();
         tx.expect_send()
             .times(1)
-            .withf(|key, rec| {
-                key.is_none()
-                    && rec.lookup("service.name").map(|v| v.to_string()) == Some("checkout".into())
+            .withf(|rec| {
+                rec.lookup("service.name").map(|v| v.to_string()) == Some("checkout".into())
             })
-            .returning(|_, _| Ok(()));
+            .returning(|_| Ok(()));
 
         let counts = Counts::default();
         let (out, dropped) = (counts.out.clone(), counts.dropped.clone());

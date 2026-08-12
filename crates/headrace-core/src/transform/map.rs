@@ -32,7 +32,7 @@ pub(super) async fn run(
                 if let Some(name) = &name {
                     rec.name = name.clone();
                 }
-                if tx.send(None, rec).await.is_err() {
+                if tx.send(rec).await.is_err() {
                     break;
                 }
                 nm.out();
@@ -53,7 +53,7 @@ pub(super) async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::{Backend, InProcess};
+    use crate::backend::{Backend, InProcess, KeySpec};
     use crate::metrics::{NodeKind, NodeMetrics};
     use crate::record::{Attrs, Record};
     use crate::{NoopMetrics, SharedMetrics};
@@ -106,9 +106,9 @@ mod tests {
     async fn errors_on_invalid_when_configured() {
         // 5 / 0 is non-finite -> on_invalid, here set to error.
         let mut be = InProcess::new(8);
-        let feed = be.producer("in");
+        let feed = be.producer("in", &KeySpec::Unkeyed);
         let rx = be.consumer("in");
-        let tx = be.producer("m");
+        let tx = be.producer("m", &KeySpec::Unkeyed);
         let _out = be.consumer("m");
         drop(be);
         let metrics: SharedMetrics = Arc::new(NoopMetrics);
@@ -122,7 +122,7 @@ mod tests {
             tx,
             nm,
         ));
-        feed.send(None, rec(5.0)).await.unwrap();
+        feed.send(rec(5.0)).await.unwrap();
         drop(feed);
         assert!(
             task.await.unwrap().is_err(),
@@ -139,9 +139,9 @@ mod tests {
         rec: Record,
     ) -> Box<dyn Consumer> {
         let mut be = InProcess::new(8);
-        let feed = be.producer("in");
+        let feed = be.producer("in", &KeySpec::Unkeyed);
         let rx = be.consumer("in");
-        let tx = be.producer("m");
+        let tx = be.producer("m", &KeySpec::Unkeyed);
         let out = be.consumer("m");
         drop(be);
         let metrics: SharedMetrics = Arc::new(NoopMetrics);
@@ -155,7 +155,7 @@ mod tests {
             tx,
             nm,
         ));
-        feed.send(None, rec).await.unwrap();
+        feed.send(rec).await.unwrap();
         drop(feed); // close the input so the task drains and exits
         out
     }

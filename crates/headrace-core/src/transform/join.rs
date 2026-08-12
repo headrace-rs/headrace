@@ -110,7 +110,7 @@ pub(super) async fn run(
             let bucket = buckets.remove(&key).expect("bucket just updated");
             match emit(&out_name, &inputs, expr.as_ref(), bucket)? {
                 Some(record) => {
-                    if tx.send(None, record).await.is_err() {
+                    if tx.send(record).await.is_err() {
                         return Ok(());
                     }
                     nm.out();
@@ -224,7 +224,7 @@ fn bucket_key(start: u64, end: u64, labels: &Attrs) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::{Backend, InProcess};
+    use crate::backend::{Backend, InProcess, KeySpec};
     use crate::metrics::{NodeKind, NodeMetrics};
     use crate::{NoopMetrics, SharedMetrics};
     use std::sync::Arc;
@@ -233,11 +233,11 @@ mod tests {
     async fn reduces_aligned_inputs() {
         let (feeders, mut out) = setup(&["a", "b"], Some("a - b"));
         feeders[0]
-            .send(None, wrec("checkout", 0, 60, 214.0))
+            .send(wrec("checkout", 0, 60, 214.0))
             .await
             .unwrap();
         feeders[1]
-            .send(None, wrec("checkout", 0, 60, 190.0))
+            .send(wrec("checkout", 0, 60, 190.0))
             .await
             .unwrap();
         let got = out.recv().await.expect("joined record");
@@ -256,14 +256,8 @@ mod tests {
     #[tokio::test]
     async fn align_only_carries_inputs_as_attributes() {
         let (feeders, mut out) = setup(&["a", "b"], None);
-        feeders[0]
-            .send(None, wrec("checkout", 0, 60, 5.0))
-            .await
-            .unwrap();
-        feeders[1]
-            .send(None, wrec("checkout", 0, 60, 8.0))
-            .await
-            .unwrap();
+        feeders[0].send(wrec("checkout", 0, 60, 5.0)).await.unwrap();
+        feeders[1].send(wrec("checkout", 0, 60, 8.0)).await.unwrap();
         let got = out.recv().await.expect("joined record");
         assert_eq!(got.attrs.get("a"), Some(&AttrValue::Double(5.0)));
         assert_eq!(got.attrs.get("b"), Some(&AttrValue::Double(8.0)));
@@ -274,17 +268,14 @@ mod tests {
     async fn drops_unaligned_windows() {
         let (feeders, mut out) = setup(&["a", "b"], Some("a + b"));
         // `a` has window [0,60); `b` jumps to [60,120), so [0,60) never completes.
-        feeders[0]
-            .send(None, wrec("checkout", 0, 60, 1.0))
-            .await
-            .unwrap();
+        feeders[0].send(wrec("checkout", 0, 60, 1.0)).await.unwrap();
         feeders[1]
-            .send(None, wrec("checkout", 60, 120, 2.0))
+            .send(wrec("checkout", 60, 120, 2.0))
             .await
             .unwrap();
         // `a` advances to [60,120) too, completing it; [0,60) is evicted, never emitted.
         feeders[0]
-            .send(None, wrec("checkout", 60, 120, 3.0))
+            .send(wrec("checkout", 60, 120, 3.0))
             .await
             .unwrap();
         let got = out.recv().await.expect("the [60,120) join");
@@ -297,14 +288,8 @@ mod tests {
     async fn drops_when_the_reduce_cannot_evaluate() {
         // `c` is not an input, so the expression can't resolve and nothing is emitted.
         let (feeders, mut out) = setup(&["a", "b"], Some("a - c"));
-        feeders[0]
-            .send(None, wrec("checkout", 0, 60, 5.0))
-            .await
-            .unwrap();
-        feeders[1]
-            .send(None, wrec("checkout", 0, 60, 8.0))
-            .await
-            .unwrap();
+        feeders[0].send(wrec("checkout", 0, 60, 5.0)).await.unwrap();
+        feeders[1].send(wrec("checkout", 0, 60, 8.0)).await.unwrap();
         drop(feeders); // the [0,60) bucket completes, the reduce fails, nothing forwards
         assert!(out.recv().await.is_none());
     }
@@ -312,10 +297,10 @@ mod tests {
     #[tokio::test]
     async fn snapshot_reports_incomplete_buckets() {
         let mut be = InProcess::new(64);
-        let fa = be.producer("a");
-        let fb = be.producer("b");
+        let fa = be.producer("a", &KeySpec::Unkeyed);
+        let fb = be.producer("b", &KeySpec::Unkeyed);
         let rxs = vec![be.consumer("a"), be.consumer("b")];
-        let tx = be.producer("out");
+        let tx = be.producer("out", &KeySpec::Unkeyed);
         let mut out = be.consumer("out");
         drop(be);
         let metrics: SharedMetrics = Arc::new(NoopMetrics);
@@ -332,7 +317,7 @@ mod tests {
 
         // Only input `a` arrives for checkout [0,60): the bucket stays open, waiting on `b`.
         // With no `b` record, the watermark stays 0, so nothing is evicted.
-        fa.send(None, wrec("checkout", 0, 60, 5.0)).await.unwrap();
+        fa.send(wrec("checkout", 0, 60, 5.0)).await.unwrap();
 
         // The record crosses two channels (per-input forwarder -> merged), so poll until the
         // node's loop has folded it - race-free without guessing at timing.
@@ -348,7 +333,7 @@ mod tests {
 
         // `b` completes the bucket: it fires and leaves the open set. Reading the emitted
         // record proves the loop removed the bucket, so the next snapshot is deterministic.
-        fb.send(None, wrec("checkout", 0, 60, 8.0)).await.unwrap();
+        fb.send(wrec("checkout", 0, 60, 8.0)).await.unwrap();
         assert_eq!(
             out.recv().await.expect("the completed join fires").value,
             13.0
@@ -386,9 +371,12 @@ mod tests {
         value: Option<&str>,
     ) -> (Vec<Box<dyn Producer>>, Box<dyn Consumer>) {
         let mut be = InProcess::new(64);
-        let feeders: Vec<_> = input_ids.iter().map(|id| be.producer(id)).collect();
+        let feeders: Vec<_> = input_ids
+            .iter()
+            .map(|id| be.producer(id, &KeySpec::Unkeyed))
+            .collect();
         let rxs: Vec<_> = input_ids.iter().map(|id| be.consumer(id)).collect();
-        let tx = be.producer("out");
+        let tx = be.producer("out", &KeySpec::Unkeyed);
         let out = be.consumer("out");
         drop(be);
         let metrics: SharedMetrics = Arc::new(NoopMetrics);

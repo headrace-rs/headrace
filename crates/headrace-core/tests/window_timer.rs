@@ -3,7 +3,7 @@
 //! in-process backend together, which the pure-`Window` unit tests don't cover. Event time
 //! is driven entirely by the records, so no clock manipulation is needed.
 
-use headrace_core::backend::{Backend, InProcess};
+use headrace_core::backend::{Backend, InProcess, KeySpec};
 use headrace_core::metrics::{NodeKind, NodeMetrics};
 use headrace_core::record::{Attrs, Record};
 use headrace_core::{NoopMetrics, SharedMetrics};
@@ -14,9 +14,9 @@ use std::time::Duration;
 #[tokio::test]
 async fn window_fires_on_the_event_time_watermark() {
     let mut be = InProcess::new(64);
-    let feed = be.producer("in"); // we push inputs here
+    let feed = be.producer("in", &KeySpec::Unkeyed); // we push inputs here
     let win_rx = be.consumer("in"); // window reads them
-    let win_tx = be.producer("w"); // window writes rollups
+    let win_tx = be.producer("w", &KeySpec::Unkeyed); // window writes rollups
     let mut out = be.consumer("w"); // we read them
     drop(be);
 
@@ -38,10 +38,10 @@ async fn window_fires_on_the_event_time_watermark() {
     let five_s = Duration::from_secs(5).as_nanos() as u64;
     // Three records land in the first window [0, 5s).
     for _ in 0..3 {
-        feed.send(None, rec_at(1_000_000_000)).await.unwrap(); // ts = 1s
+        feed.send(rec_at(1_000_000_000)).await.unwrap(); // ts = 1s
     }
     // A record at t = 5s advances the watermark to 5s, closing [0, 5s).
-    feed.send(None, rec_at(five_s)).await.unwrap();
+    feed.send(rec_at(five_s)).await.unwrap();
 
     let flushed = out
         .recv()
@@ -64,9 +64,9 @@ async fn window_fires_on_the_event_time_watermark() {
 #[tokio::test(start_paused = true)]
 async fn idle_timeout_collapses_an_open_window() {
     let mut be = InProcess::new(64);
-    let feed = be.producer("in");
+    let feed = be.producer("in", &KeySpec::Unkeyed);
     let win_rx = be.consumer("in");
-    let win_tx = be.producer("w");
+    let win_tx = be.producer("w", &KeySpec::Unkeyed);
     let mut out = be.consumer("w");
     drop(be);
 
@@ -87,8 +87,8 @@ async fn idle_timeout_collapses_an_open_window() {
     ));
 
     // Two records land in one open window (watermark stays far below its end).
-    feed.send(None, rec_at(1_000_000_000)).await.unwrap();
-    feed.send(None, rec_at(1_000_000_000)).await.unwrap();
+    feed.send(rec_at(1_000_000_000)).await.unwrap();
+    feed.send(rec_at(1_000_000_000)).await.unwrap();
 
     // Nothing else can progress, so virtual time advances to the 5s idle timer, which
     // collapses the open window. No manual sleep.

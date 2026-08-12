@@ -34,7 +34,7 @@ impl MetricsService for Service {
             super::convert::decode(request.into_inner(), &mut norm)
         };
         for rec in records {
-            if self.tx.send(None, rec).await.is_err() {
+            if self.tx.send(rec).await.is_err() {
                 return Err(Status::unavailable("pipeline closed"));
             }
             self.nm.out();

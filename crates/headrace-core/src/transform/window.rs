@@ -458,7 +458,7 @@ async fn emit(recs: Vec<Record>, tx: &dyn Producer, nm: &NodeMetrics) -> bool {
     nm.window_flushed(recs.len() as u64);
     for rec in recs {
         nm.out();
-        if tx.send(None, rec).await.is_err() {
+        if tx.send(rec).await.is_err() {
             return false;
         }
     }

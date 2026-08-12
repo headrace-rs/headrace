@@ -3,7 +3,7 @@
 //! advances each window's watermark to fire the closed one; the join then aligns the two
 //! rollups and reduces them. Also validates the shipped cross-series example.
 
-use headrace_core::backend::{Backend, InProcess};
+use headrace_core::backend::{Backend, InProcess, KeySpec};
 use headrace_core::metrics::{NodeKind, NodeMetrics};
 use headrace_core::record::{AttrValue, Attrs, Record};
 use headrace_core::{NoopMetrics, SharedMetrics};
@@ -14,15 +14,15 @@ use std::time::Duration;
 #[tokio::test]
 async fn window_then_join_reduces_two_series() {
     let mut be = InProcess::new(64);
-    let feed_hi = be.producer("hi_src");
-    let feed_lo = be.producer("lo_src");
+    let feed_hi = be.producer("hi_src", &KeySpec::Unkeyed);
+    let feed_lo = be.producer("lo_src", &KeySpec::Unkeyed);
     let hi_rx = be.consumer("hi_src");
-    let hi_tx = be.producer("hi");
+    let hi_tx = be.producer("hi", &KeySpec::Unkeyed);
     let lo_rx = be.consumer("lo_src");
-    let lo_tx = be.producer("lo");
+    let lo_tx = be.producer("lo", &KeySpec::Unkeyed);
     let join_hi = be.consumer("hi");
     let join_lo = be.consumer("lo");
-    let join_tx = be.producer("j");
+    let join_tx = be.producer("j", &KeySpec::Unkeyed);
     let mut out = be.consumer("j");
     drop(be);
 
@@ -59,21 +59,15 @@ async fn window_then_join_reduces_two_series() {
     // Each series gets one value in window [0, 5s); a record at 5s advances the watermark
     // and fires it.
     feed_hi
-        .send(None, rec("checkout", 1_000_000_000, 10.0))
+        .send(rec("checkout", 1_000_000_000, 10.0))
         .await
         .unwrap();
     feed_lo
-        .send(None, rec("checkout", 1_000_000_000, 3.0))
+        .send(rec("checkout", 1_000_000_000, 3.0))
         .await
         .unwrap();
-    feed_hi
-        .send(None, rec("checkout", five_s, 0.0))
-        .await
-        .unwrap();
-    feed_lo
-        .send(None, rec("checkout", five_s, 0.0))
-        .await
-        .unwrap();
+    feed_hi.send(rec("checkout", five_s, 0.0)).await.unwrap();
+    feed_lo.send(rec("checkout", five_s, 0.0)).await.unwrap();
 
     let got = out.recv().await.expect("the joined rollup for [0, 5s)");
     assert_eq!(got.name, "diff");

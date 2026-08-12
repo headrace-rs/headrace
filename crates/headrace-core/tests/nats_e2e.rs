@@ -5,7 +5,7 @@
 //! `-- --ignored`. It exercises the network path the unit tests cannot: connect, stream
 //! provisioning, publish with ack, durable pull consume, and MessagePack round-trip.
 
-use headrace_core::backend::{Backend, Nats};
+use headrace_core::backend::{Backend, KeySpec, Nats};
 use headrace_core::record::{AttrValue, Attrs, Record};
 use std::time::Duration;
 use testcontainers::core::{IntoContainerPort, WaitFor};
@@ -43,11 +43,11 @@ async fn records_round_trip_through_jetstream() {
     }
     let mut backend = backend.expect("connect to jetstream");
 
-    let producer = backend.producer("w");
+    let producer = backend.producer("w", &KeySpec::Unkeyed);
     let mut consumer = backend.consumer("w");
 
     for i in 0..3u64 {
-        producer.send(None, rec(i)).await.expect("publish");
+        producer.send(rec(i)).await.expect("publish");
     }
     // Work-queue + single consumer preserves order.
     for i in 0..3u64 {
@@ -99,12 +99,9 @@ async fn connect_waits_for_nats_then_recovers() {
         .expect("connect finishes within 20s of NATS coming up")
         .expect("connect task ok")
         .expect("connected once NATS is up");
-    let producer = backend.producer("w");
+    let producer = backend.producer("w", &KeySpec::Unkeyed);
     let mut consumer = backend.consumer("w");
-    producer
-        .send(None, rec(7))
-        .await
-        .expect("publish after recovery");
+    producer.send(rec(7)).await.expect("publish after recovery");
     assert_eq!(consumer.recv().await.expect("a record arrives").value, 7.0);
 }
 

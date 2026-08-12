@@ -1,4 +1,4 @@
-use crate::backend::Backend;
+use crate::backend::{Backend, KeySpec};
 use crate::error::ValidationError;
 use crate::metrics::{NodeKind, NodeMetrics, SharedMetrics};
 use crate::{sink, source, transform};
@@ -162,6 +162,29 @@ fn check_joins(p: &Pipeline) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// The partition key spec for node `output_id`'s output edge: the `group_by` of the single
+/// stateful transform it feeds, or `Unkeyed` when it feeds a stateless node, a sink, or
+/// nothing. The graph has no fan-out (validate rejects `MultipleConsumers`), so the consumer
+/// is unique. Keying is non-transitive on purpose: a `map` can rewrite the attrs a downstream
+/// window groups on, so a record is keyed on the edge that directly feeds the stateful node,
+/// by the fields present there. A join keys by its upstream window's `group_by`, which the
+/// join shares by construction (ADR-0012), so co-partitioned inputs meet on one worker.
+fn key_spec(output_id: &str, p: &Pipeline) -> KeySpec {
+    let consumer = p
+        .transforms
+        .iter()
+        .find(|t| t.inputs().contains(&output_id));
+    match consumer {
+        Some(Transform::Window { group_by, .. }) => KeySpec::Keyed(group_by.clone()),
+        // A join input is a validated window; key by that window's own `group_by`.
+        Some(Transform::Join { .. }) => match p.transforms.iter().find(|t| t.id() == output_id) {
+            Some(Transform::Window { group_by, .. }) => KeySpec::Keyed(group_by.clone()),
+            _ => KeySpec::Unkeyed,
+        },
+        _ => KeySpec::Unkeyed,
+    }
+}
+
 fn node_ids(p: &Pipeline) -> impl Iterator<Item = &str> {
     p.sources
         .iter()
@@ -248,7 +271,7 @@ pub async fn run(
     let mut registry = crate::inspect::Registry::default();
 
     for s in &p.sources {
-        let tx = backend.producer(s.id());
+        let tx = backend.producer(s.id(), &key_spec(s.id(), &p));
         let nm = NodeMetrics::bind(&metrics, s.id(), NodeKind::Source);
         let node = nm.clone();
         let src = s.clone();
@@ -260,7 +283,7 @@ pub async fn run(
     }
     for o in &p.transforms {
         let rxs: Vec<_> = o.inputs().iter().map(|id| backend.consumer(id)).collect();
-        let tx = backend.producer(o.id());
+        let tx = backend.producer(o.id(), &key_spec(o.id(), &p));
         let nm = NodeMetrics::bind(&metrics, o.id(), transform_kind(o));
         let node = nm.clone();
         let op = o.clone();
@@ -709,6 +732,36 @@ mod tests {
             metrics.errors.load(Ordering::Relaxed) >= 1,
             "the failing node's error must be metered"
         );
+    }
+
+    #[test]
+    fn key_spec_keys_only_edges_that_feed_stateful_nodes() {
+        let p = pipeline(
+            r#"
+            sources:
+              - { type: generator, id: s1, interval: 1s }
+              - { type: generator, id: s2, interval: 1s }
+            transforms:
+              - { type: filter, id: f, input: s1, key: service.name }
+              - { type: window, id: w1, input: f, size: 5s,
+                  group_by: [service.name], aggregate: { op: count } }
+              - { type: window, id: w2, input: s2, size: 5s,
+                  group_by: [service.name], aggregate: { op: count } }
+              - { type: join, id: j, inputs: [w1, w2], value: "w1 + w2" }
+            sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+        );
+        let svc = || KeySpec::Keyed(vec!["service.name".to_string()]);
+        // An edge into a stateless filter is unkeyed; the filter -> window edge repartitions.
+        assert_eq!(key_spec("s1", &p), KeySpec::Unkeyed);
+        assert_eq!(key_spec("f", &p), svc());
+        assert_eq!(key_spec("s2", &p), svc());
+        // A window feeding a join keys by its own group_by, which the join shares, so both
+        // inputs for a key co-partition onto one worker.
+        assert_eq!(key_spec("w1", &p), svc());
+        assert_eq!(key_spec("w2", &p), svc());
+        // A join feeding a sink needs no routing key.
+        assert_eq!(key_spec("j", &p), KeySpec::Unkeyed);
     }
 
     fn pipeline(yaml: &str) -> Pipeline {

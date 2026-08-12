@@ -5,7 +5,7 @@
 //! path that flushes when the upstream closes.
 #![cfg(feature = "otlp")]
 
-use headrace_core::backend::{Backend, InProcess};
+use headrace_core::backend::{Backend, InProcess, KeySpec};
 use headrace_core::metrics::{NodeKind, NodeMetrics};
 use headrace_core::otlp::convert::{decode, encode};
 use headrace_core::otlp::normalize::Normalizer;
@@ -95,9 +95,9 @@ async fn otlp_round_trips_through_a_window_rollup() {
 
     // 2. Wire receiver -> window -> exporter over an in-process backend.
     let mut be = InProcess::new(1024);
-    let recv_out = be.producer("in");
+    let recv_out = be.producer("in", &KeySpec::Unkeyed);
     let win_in = be.consumer("in");
-    let win_out = be.producer("w");
+    let win_out = be.producer("w", &KeySpec::Unkeyed);
     let sink_in = be.consumer("w");
     drop(be); // release retained senders so channel-close propagates on drain
 

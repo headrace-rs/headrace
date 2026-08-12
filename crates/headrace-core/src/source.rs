@@ -65,7 +65,7 @@ async fn generator(
             value: 50.0 + ((i * 7) % 100) as f64,
             attrs,
         };
-        if tx.send(None, rec).await.is_err() {
+        if tx.send(rec).await.is_err() {
             return Ok(());
         }
         nm.out();
@@ -83,7 +83,7 @@ async fn stdin(tx: Box<dyn Producer>, nm: &NodeMetrics) -> Result<()> {
         }
         match serde_json::from_str::<Record>(&line) {
             Ok(rec) => {
-                if tx.send(None, rec).await.is_err() {
+                if tx.send(rec).await.is_err() {
                     break;
                 }
                 nm.out();

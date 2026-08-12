@@ -8,7 +8,7 @@
 //! config - are pure functions, unit-tested below. Only the thin async glue (connect,
 //! publish, pull) needs a live server, and it is covered by the `nats_e2e` integration test.
 
-use crate::backend::{Backend, Consumer, Key, Producer};
+use crate::backend::{Backend, Consumer, KeySpec, Producer};
 use crate::record::Record;
 use anyhow::{Context, Result};
 use async_nats::ConnectOptions;
@@ -110,7 +110,8 @@ impl Nats {
 }
 
 impl Backend for Nats {
-    fn producer(&mut self, id: &str) -> Box<dyn Producer> {
+    fn producer(&mut self, id: &str, _key: &KeySpec) -> Box<dyn Producer> {
+        // Stage 1 is single-partition; the key drives routing in stage 2.
         Box::new(NatsProducer {
             js: self.js.clone(),
             subject: subject(&self.pipeline, id),
@@ -148,9 +149,7 @@ impl NatsProducer {
 
 #[async_trait]
 impl Producer for NatsProducer {
-    async fn send(&self, _key: Key, rec: Record) -> Result<()> {
-        // `key` carries no routing meaning in stage 1 (single partition); it drives the
-        // server-side partition transform in stage 2.
+    async fn send(&self, rec: Record) -> Result<()> {
         let payload = encode(&rec)?;
         // Retry through a NATS outage rather than failing the node: the client reconnects
         // underneath, so this back-pressures the pipeline until the publish is durably acked.
