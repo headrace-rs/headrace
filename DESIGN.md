@@ -82,10 +82,10 @@ records to the worker that owns them. OTLP is the *external* edge, how telemetry
 results get out. You feed data through OTLP, not through the backend.
 
 The `Backend` trait is the boundary (`crates/headrace-core/src/backend.rs`):
-`producer(id) -> Box<dyn Producer>` and `consumer(id) -> Box<dyn Consumer>`, where
-`Producer::send(key, rec)` carries the partition key as bytes. In-process today (mpsc, key
-ignored); a subject-per-node JetStream implementation (hashing `key` into the subject) drops in
-behind the same trait.
+`producer(id, key_spec) -> Box<dyn Producer>` and `consumer(id) -> Box<dyn Consumer>`. The runtime
+derives each edge's `key_spec` (the downstream transform's `group_by`) from the graph, and the
+producer keys every record by it; `Producer::send(rec)` publishes. In-process ignores the key
+(single worker); the JetStream implementation hashes it into a partition subject.
 
 **Backend choice: NATS JetStream** (embeddable and familiar), with Redpanda or Kafka as a fallback
 if elastic rebalance becomes a hard requirement. JetStream partitioning works but is not automatic
@@ -93,14 +93,16 @@ the way Kafka consumer groups are:
 
 ```mermaid
 flowchart LR
-  ig[ingress] -->|"publish headrace.node.rollup"| pt["server subject-map<br/>partition(P, group_key)"]
-  pt --> s0[["headrace.node.rollup.0"]]
-  pt --> s1[["headrace.node.rollup.1"]]
+  ig[ingress] -->|"hash(group_key) % P"| pt["client-side partition"]
+  pt --> s0[["hr.pipe.node.0"]]
+  pt --> s1[["hr.pipe.node.1"]]
   s0 -->|durable pull| w0["worker-0"]
   s1 -->|durable pull| w1["worker-1"]
 ```
 
-- A server-side `partition(P, ...)` subject transform hashes the group key to an index `0..P-1`.
+- Headrace hashes the group key client-side (`hash(key) % P`, FNV-1a) and publishes to the
+  partition subject `hr.<pipeline>.<node>.<p>`; no server-side subject transform to configure
+  (ADR-0015).
 - One durable pull consumer per partition; a worker binds the partitions for its StatefulSet
   ordinal (static assignment: `partition % replicas == ordinal`).
 - Trade-off versus Kafka: scaling P is a rolling operation, not seamless elastic rebalance.
@@ -123,8 +125,8 @@ out of scope.
 What the windowing transforms keep, and how it stays correct under scale and failure.
 
 **Keyed on.** State is keyed by `(transform_id, group_key, window)`, where `group_key` is the
-`group_by` tuple. That same key is the backend partition key (`Backend::Key` bytes), so a group's
-records, and therefore its state, always land on one worker.
+`group_by` tuple. That same `group_key` is the backend partition key, so a group's records, and
+therefore its state, always land on one worker.
 
 **Time is event time.** Windows are placed by the record's own `ts_nanos` (OTel `TimeUnixNano`),
 not wall clock. v0.1 triggers flushes on processing time (simple, but wrong under lag or replay).

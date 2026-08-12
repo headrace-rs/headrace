@@ -15,12 +15,20 @@ headrace [GLOBAL FLAGS] <command> [ARGS]
 ### run
 
 ```sh
-headrace run <file> [--inspect-addr ADDR]
+headrace run <file> [--inspect-addr ADDR] [--backend nats --nats-url URL]
 ```
 
 Load a pipeline and run it until Ctrl-C. `--inspect-addr` (e.g. `127.0.0.1:4318`) serves the
 state-inspection gRPC API so [`inspect`](#inspect) can query live node state; it is off by
 default and exposes raw state, so bind a trusted network only.
+
+The default backend is `in-process` (in-memory channels, a single process). `--backend nats`
+carries records over NATS JetStream for a durable, scaled deployment and needs `--nats-url`
+(e.g. `nats://127.0.0.1:4222`); `--name` namespaces the NATS subjects (default: the pipeline
+file stem). Scale out by splitting each edge into `--partitions` partitions (default 12) and
+running `--workers` copies, each with a distinct `--worker-index` in `0..workers` (or the
+`HEADRACE_WORKER_INDEX` env var). A key routes to `hash(key) % partitions` and worker `i` owns
+the partitions where `p % workers == i`, so all state for a key stays on one worker.
 
 ### validate
 

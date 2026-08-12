@@ -73,13 +73,28 @@ cargo run -p headrace -- run examples/latency.yaml \
   --backend nats --nats-url nats://127.0.0.1:4222
 ```
 
-Headrace provisions a work-queue stream per node output (subject `hr.<name>.<node>`, where
-`<name>` defaults to the pipeline file stem or is set with `--name`) on startup. Inspect them
-with the [`nats`](https://github.com/nats-io/natscli) CLI:
+Headrace provisions a work-queue stream per node output on startup, with subjects
+`hr.<name>.<node>.<partition>` (`<name>` defaults to the pipeline file stem or is set with
+`--name`). Inspect them with the [`nats`](https://github.com/nats-io/natscli) CLI:
 
 ```shell
 nats stream ls        # the hr_<name>_<node> streams
 nats stream report
+```
+
+To scale out, split each edge into `--partitions` partitions (default 12) and run `--workers`
+copies, each with a distinct `--worker-index` in `0..workers` (or set `HEADRACE_WORKER_INDEX`,
+e.g. from a StatefulSet ordinal). A record routes to `hash(key) % partitions`, and worker `i`
+owns the partitions where `p % workers == i`, so all state for a key stays on one worker.
+Point every worker at the same pipeline and `--name` so they share the streams:
+
+```shell
+# terminal 1
+cargo run -p headrace -- run examples/latency.yaml \
+  --backend nats --nats-url nats://127.0.0.1:4222 --workers 2 --worker-index 0
+# terminal 2
+cargo run -p headrace -- run examples/latency.yaml \
+  --backend nats --nats-url nats://127.0.0.1:4222 --workers 2 --worker-index 1
 ```
 
 Payloads are MessagePack. Decode one to JSON with `msgpack2json` from

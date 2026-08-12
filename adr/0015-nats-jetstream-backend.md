@@ -17,9 +17,10 @@ subject layout, the wire codec, the consumer and acknowledgement model (and thus
 guarantee), how a worker learns its partitions, the crate feature, and how it is tested. It does
 not re-open the backend choice or the assignment strategy.
 
-The `Backend` trait is the interface a networked backend slots into: `producer(id)` /
-`consumer(id)` per node-output edge, with a partition `Key` threaded through `Producer::send`. The
-in-process backend (bounded mpsc per edge) stays the default; NATS is a second implementation.
+The `Backend` trait is the interface a networked backend slots into: `producer(id, key_spec)` /
+`consumer(id)` per node-output edge, where the producer keys each record by `key_spec` (the
+downstream transform's `group_by`) and `Producer::send(rec)` publishes it. The in-process backend
+(bounded mpsc per edge) stays the default; NATS is a second implementation.
 
 ## Decision
 
@@ -31,13 +32,13 @@ transport, stream provisioning, and the ack model end to end. Stage 2 adds stati
 for multiple workers. Stage 1 is useful on its own (a restart-tolerant, back-pressured transport)
 and shakes out the transport before partitioning is layered on.
 
-1. **Streams and subjects.** One JetStream stream per pipeline edge (a node's output), subject
-   `hr.<pipeline>.<node>` in stage 1 and `hr.<pipeline>.<node>.<partition>` in stage 2. Headrace
-   *ensures* its streams on startup (idempotent), so no manual provisioning. Retention is
-   **work-queue**: a record leaves the stream once its single consumer acks it, which matches the
-   runtime's one-consumer-per-output rule (`MultipleConsumers` validation). The `<pipeline>` token
-   namespaces subjects so many pipelines can share one cluster; it comes from a `--name` flag
-   (defaulting to the pipeline file stem).
+1. **Streams and subjects.** One JetStream stream per pipeline edge (a node's output), capturing
+   the partition subjects `hr.<pipeline>.<node>.<partition>` (a single partition when running one
+   worker). Headrace *ensures* its streams on startup (idempotent), so no manual provisioning.
+   Retention is **work-queue**: a record leaves the stream once its single (per-partition) consumer
+   acks it, which matches the runtime's one-consumer-per-output rule (`MultipleConsumers`
+   validation). The `<pipeline>` token namespaces subjects so many pipelines can share one cluster;
+   it comes from a `--name` flag (defaulting to the pipeline file stem).
 
 2. **Wire codec: MessagePack** (`rmp-serde` over the existing `Record` serde model). It is compact
    and fast, and self-describing, so a `Record` that gains a field still decodes on a peer worker
@@ -53,13 +54,17 @@ and shakes out the transport before partitioning is layered on.
    as invasive. On a crash, unacked records are redelivered.
 
 4. **Static partition assignment (stage 2).** A stream has a fixed partition count `P`
-   (`--partitions`, default 12). Keys map to partitions by `hash(key) % P` - fixed key-groups, the
-   Flink model ADR-0008 pointed to - computed server-side by NATS's `partition` subject-mapping
-   (ADR-0003), so the producer publishes to `hr.<pipeline>.<node>` and the server routes to
-   `...<p>`. A worker is `i` of `N` (`--worker-index` / `--workers`, or a StatefulSet ordinal from
-   the environment) and binds consumers to the partitions where `p % N == i`, with `N <= P`.
-   Because a key maps to the same `p` on every edge, a join's inputs arrive on the worker that owns
-   that key, so no data crosses workers to align them.
+   (`--partitions`, default 12), and its subject carries the partition: `hr.<pipeline>.<node>.<p>`.
+   A record maps to a partition by `hash(key) % P` - fixed key-groups, the Flink model ADR-0008
+   pointed to - where `key` is the downstream transform's `group_by`. We compute this **client-side**
+   (a stable FNV-1a hash, publishing straight to the partition subject) rather than via NATS's
+   `partition` subject-mapping (an option ADR-0003 noted): it keeps provisioning self-contained (no
+   server-side subject transforms to configure), keeps the hash under our control and stable across
+   versions and platforms, and makes the partition math a pure, unit-tested function. A worker is
+   `i` of `N` (`--worker-index` / `--workers`, or a StatefulSet ordinal from the environment) and
+   binds a durable pull consumer per partition where `p % N == i`, with `N <= P`. Because a key maps
+   to the same `p` on every edge, a join's inputs arrive on the worker that owns that key, so no
+   data crosses workers to align them.
 
    We keep fixed key-groups rather than a consistent-hash (ketama) ring: a ring maps keys straight
    to workers and remaps individual keys whenever `N` changes, whereas fixed key-groups reassign
