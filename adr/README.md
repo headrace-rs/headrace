@@ -27,3 +27,5 @@ Significant architectural decisions are recorded here as ADRs, using the
 - [0012](./0012-join-transform.md) - Join transform: align N series, optionally reduce
 - [0013](./0013-documentation-site.md) - Web presence: landing and Vocs docs
 - [0014](./0014-local-state-inspection.md) - Local state inspection over gRPC
+- [0015](./0015-nats-jetstream-backend.md) - NATS JetStream backend: streams, acks, and workers
+- [0016](./0016-worker-ownership-leases.md) - Worker ownership leases: fail fast on a duplicate index
