@@ -107,11 +107,26 @@ nats sub --raw --count 1 'hr.>' | msgpack2json
 ```
 
 The end-to-end backend test spins up NATS itself via testcontainers; it is `#[ignore]`d, so it
-needs Docker and `--ignored`:
+needs a container runtime and `--ignored`:
 
 ```shell
 cargo test -p headrace-core --features nats --test nats_e2e -- --ignored --nocapture
 ```
+
+testcontainers talks to any Docker-API-compatible runtime via `DOCKER_HOST`, so [Podman] works
+without Docker Desktop. Point it at a running Podman machine's socket and disable the reaper
+(Podman rootless does not run the privileged Ryuk container):
+
+```shell
+export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
+export TESTCONTAINERS_RYUK_DISABLED=true
+cargo test -p headrace-core --features nats --test nats_e2e -- --ignored --nocapture
+```
+
+CI runs the same test on the Linux Docker Engine (no Desktop, no license), so no `DOCKER_HOST` is
+needed there.
+
+[Podman]: https://podman.io
 
 Install [prek](https://github.com/j178/prek) and enable the git hooks once. They run typos
 and rustfmt on commit, a Conventional Commits check on the message, and clippy on push:
