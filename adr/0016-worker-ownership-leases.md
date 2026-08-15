@@ -5,49 +5,34 @@
 
 ## Context
 
-[ADR-0008](0008-static-partition-assignment.md) chose static partition assignment, and
-[ADR-0015](0015-nats-jetstream-backend.md) implemented it: worker `i` of `N` owns the partitions
-where `p % N == i`, selected with `--workers` / `--worker-index` (or `HEADRACE_WORKER_INDEX`).
+Static assignment ([ADR-0008](0008-static-partition-assignment.md), implemented in
+[ADR-0015](0015-nats-jetstream-backend.md)) gives worker `i` of `N` the partitions where
+`p % N == i`, set by `--worker-index`. Correctness needs each index held by exactly one worker. A
+StatefulSet ordinal guarantees that; a mistyped flag or two runs sharing a `--name` do not.
 
-Correctness depends on each index being held by exactly one running worker. In Kubernetes a
-StatefulSet ordinal guarantees that. Nothing else does: a fat-fingered `--worker-index`, or two
-`headrace run` processes sharing a `--name`, can run two workers at the same index.
-
-That failure is silent and damaging. Per-partition durable pull consumers are named by partition,
-so two same-index workers bind the *same* durables; JetStream load-balances a durable's messages
-across its pullers, so a key's records split across both workers and each computes a wrong partial
-aggregate. Meanwhile the partitions of the *absent* index have no consumer, pile up in the
-work-queue, stall that slice of the keyspace, and eventually back-pressure producers. Nothing errors.
-
-We are not ready to replace static assignment with dynamic assignment (a consumer-group model):
-rebalancing a stateful partition means moving its window state, which is lossy until checkpointing
-(v0.5, ADR-0008). So this must *guard* static assignment, not replace it.
+A duplicate index is silent and wrong. Two workers at the same index bind the same per-partition
+durables, so JetStream splits a key's records across both (each aggregates a fragment), while the
+absent index's partitions have no consumer and stall. Dynamic reassignment would fix the setup, but
+moving a partition's window state is lossy until checkpointing (v0.5, ADR-0008). So we guard the
+assignment rather than replace it.
 
 ## Decision
 
-We will guard worker-index uniqueness with a lease in NATS KV, which runs on the JetStream we
-already require, so it adds no new infrastructure.
+We will lease each worker index in NATS KV, which rides on the JetStream we already need.
 
-- On startup, before binding consumers, a worker atomically claims the key for its index in a
-  per-pipeline bucket (`hr_<pipeline>_workers`) with a create-if-absent write. If the key is already
-  held, startup fails with a clear error naming the index and the likely `--workers` /
-  `--worker-index` misconfiguration. A transient NATS error retries (as stream provisioning does);
-  only a genuine conflict is fatal.
-- The bucket has a TTL and the worker renews its key on an interval, so a live worker keeps its
-  lease and a crashed one's lease expires, freeing the slot for a replacement within the TTL.
-- This is mutual exclusion, not assignment. Workers still learn their index statically (a
-  StatefulSet ordinal in production); we do not elect a leader or rebalance.
+- At startup a worker create-claims the key for its index in a per-pipeline bucket
+  (`hr_<pipeline>_workers`). A held key means another worker owns the index, and startup errors. A
+  transient NATS error retries; only a real conflict is fatal.
+- The bucket has a TTL and the worker renews within it, so a live worker keeps the lease and a dead
+  one's expires, freeing the index after the TTL.
+- This is mutual exclusion, not assignment. A worker still learns its index statically; we do not
+  elect or rebalance.
 
 ## Consequences
 
-- A concurrent duplicate index fails loudly at startup instead of silently splitting keyed state
-  and stalling the unowned partitions - the motivating bug.
-- Adds a KV bucket per pipeline (a JetStream stream underneath) and a lightweight renewal task per
-  worker. No new external dependency.
-- A crashed worker's slot is reclaimable only after its lease TTL expires, so a replacement started
-  within that window waits (bounded by the TTL). Acceptable: a StatefulSet already serializes pod
-  replacement, and the alternative is silent corruption.
-- Even a single worker (`--workers 1`) takes a lease, so two stray `run --backend nats` processes
-  on the same `--name` also collide and fail fast.
-- Dynamic assignment / elastic rebalance stays deferred to the checkpointing era (v0.5, ADR-0008),
-  where moving a partition's state becomes cheap enough to make membership changes non-lossy.
+- A duplicate index errors at startup instead of splitting state and stalling partitions.
+- Adds one KV bucket per pipeline and a renewal task per worker; no new dependency.
+- A crashed worker's index is reclaimable only after the TTL, so a replacement may wait that long -
+  bounded, and a StatefulSet serializes replacement anyway.
+- Even `--workers 1` takes a lease, so two runs on the same `--name` collide too.
+- Elastic rebalance stays a v0.5 concern, once checkpointing makes moving state cheap.

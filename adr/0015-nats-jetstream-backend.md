@@ -32,13 +32,12 @@ transport, stream provisioning, and the ack model end to end. Stage 2 adds stati
 for multiple workers. Stage 1 is useful on its own (a restart-tolerant, back-pressured transport)
 and shakes out the transport before partitioning is layered on.
 
-1. **Streams and subjects.** One JetStream stream per pipeline edge (a node's output), capturing
-   the partition subjects `hr.<pipeline>.<node>.<partition>` (a single partition when running one
-   worker). Headrace *ensures* its streams on startup (idempotent), so no manual provisioning.
-   Retention is **work-queue**: a record leaves the stream once its single (per-partition) consumer
-   acks it, which matches the runtime's one-consumer-per-output rule (`MultipleConsumers`
-   validation). The `<pipeline>` token namespaces subjects so many pipelines can share one cluster;
-   it comes from a `--name` flag (defaulting to the pipeline file stem).
+1. **Streams and subjects.** One JetStream stream per pipeline edge (a node's output), over the
+   partition subjects `hr.<pipeline>.<node>.<partition>` (one partition per single worker). Headrace
+   ensures its streams on startup (idempotent). Retention is **work-queue**: a record leaves once
+   its single per-partition consumer acks it, matching the one-consumer-per-output rule
+   (`MultipleConsumers`). The `<pipeline>` token, from `--name` (default: the file stem), namespaces
+   subjects so pipelines can share a cluster.
 
 2. **Wire codec: MessagePack** (`rmp-serde` over the existing `Record` serde model). It is compact
    and fast, and self-describing, so a `Record` that gains a field still decodes on a peer worker
@@ -54,17 +53,14 @@ and shakes out the transport before partitioning is layered on.
    as invasive. On a crash, unacked records are redelivered.
 
 4. **Static partition assignment (stage 2).** A stream has a fixed partition count `P`
-   (`--partitions`, default 12), and its subject carries the partition: `hr.<pipeline>.<node>.<p>`.
-   A record maps to a partition by `hash(key) % P` - fixed key-groups, the Flink model ADR-0008
-   pointed to - where `key` is the downstream transform's `group_by`. We compute this **client-side**
-   (a stable FNV-1a hash, publishing straight to the partition subject) rather than via NATS's
-   `partition` subject-mapping (an option ADR-0003 noted): it keeps provisioning self-contained (no
-   server-side subject transforms to configure), keeps the hash under our control and stable across
-   versions and platforms, and makes the partition math a pure, unit-tested function. A worker is
-   `i` of `N` (`--worker-index` / `--workers`, or a StatefulSet ordinal from the environment) and
-   binds a durable pull consumer per partition where `p % N == i`, with `N <= P`. Because a key maps
-   to the same `p` on every edge, a join's inputs arrive on the worker that owns that key, so no
-   data crosses workers to align them.
+   (`--partitions`, default 12); its subject carries the partition. A record maps to `hash(key) % P`
+   (fixed key-groups, the Flink model of ADR-0008) where `key` is the downstream transform's
+   `group_by`. Headrace hashes it **client-side** (a stable FNV-1a) and publishes to the partition
+   subject, rather than via NATS's `partition` subject-mapping: no server-side transform to
+   configure, and the partition math stays a pure, unit-tested function. Worker `i` of `N`
+   (`--worker-index` / `--workers`, or a StatefulSet ordinal) binds a consumer per partition where
+   `p % N == i` (`N <= P`). A key maps to the same `p` on every edge, so a join's inputs meet on one
+   worker with no cross-worker movement.
 
    We keep fixed key-groups rather than a consistent-hash (ketama) ring: a ring maps keys straight
    to workers and remaps individual keys whenever `N` changes, whereas fixed key-groups reassign
