@@ -22,7 +22,8 @@ cargo test --workspace --all-features
 
 ## Writing: code, comments, docs, commits
 
-- Concise and to the point. No fluff. Explain the non-obvious; do not narrate the obvious.
+- Keep it minimal: the least that is correct and complete, no essays or novels. This holds for
+  ADRs and docs as much as for code and commits. Explain the non-obvious; do not narrate the obvious.
 - ASCII only. No em-dash and no `--`; write `-`. Use `->` not the arrow glyph, `!=` not the
   not-equal glyph, and so on.
 - Comments justify *why*, not *what*. Delete any comment that restates the code.
