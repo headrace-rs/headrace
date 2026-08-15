@@ -195,8 +195,10 @@ consumer (fan-out is a later `tee`). Full JSON Schema: `headrace schema`.
 | source | `stdin` | one JSON `Record` per line |
 | source | `otlp` | OTLP/gRPC receiver (`otlp` feature) |
 | transform | `filter` | keep where `key` exists / equals |
-| transform | `window` | tumbling; `group_by` + `aggregate {count,sum,min,max,avg}`; `on_missing {skip,error}`. Sliding/session *next* |
-| transform | `map`, `join`, `wasm` | *next* |
+| transform | `window` | tumbling + sliding, event-time; `group_by` + `aggregate {count,sum,min,max,avg}`; `on_missing {skip,error}`. Session windows *next* |
+| transform | `map` | rewrite `value` from a numeric expression |
+| transform | `join` | cross-series arithmetic on aligned windows |
+| transform | `wasm` | *next* |
 | sink | `stdout` | text / json |
 | sink | `otlp` | OTLP/gRPC exporter (`otlp` feature); Prometheus remote-write *next* |
 
@@ -275,15 +277,18 @@ single binary, and renting the backend rather than shipping one.
 
 ```mermaid
 flowchart TD
-  cli["headrace (bin)<br/>run / validate / schema"] --> core[headrace-core]
+  cli["headrace (bin)<br/>run / validate / schema / inspect"] --> core[headrace-core]
   cli --> ir[headrace-ir]
+  cli --> proto[headrace-proto]
   core --> ir
-  core -.next.-> nats[headrace-backend-nats]
+  core -.inspect.-> proto
 ```
 
 - `headrace-ir` - IR types + JSON Schema. No runtime deps.
-- `headrace-core` - record model, `Backend` trait + in-process impl, transforms, runtime, `Metrics` boundary, and the OTLP source/sink behind the optional `otlp` feature.
-- `headrace` - CLI + OTel metrics exporter (the only crate that depends on OpenTelemetry).
+- `headrace-core` - record model, `Backend` trait (in-process default), transforms, runtime, and the `Metrics` boundary. Optional features: `otlp` (source/sink), `nats` (JetStream backend), `inspect` (state-inspection gRPC server).
+- `headrace-proto` - checked-in gRPC stubs for the state-inspection API, used by the `inspect` feature and the `inspect` CLI command.
+- `headrace-proto-gen` - dev-only tool that regenerates `headrace-proto` from the `.proto`; not built at runtime.
+- `headrace` - CLI + the OTel self-metrics exporter (the only crate that depends on OpenTelemetry).
 
 ## Testing
 

@@ -57,7 +57,7 @@ cargo run -p headrace -- schema
 | Transforms | `filter`, `window` (tumbling + sliding, event-time), `map`, `join` (cross-series) | session windows, `wasm` |
 | Sinks | `otlp` (gRPC exporter), `stdout` (text / json) | Prometheus remote-write |
 | Aggregates | `count`, `sum`, `min`, `max`, `avg` | quantiles (DDSketch), `stddev`, `count_distinct` (HLL), `first`/`last`, OTel exp-histogram merge - all mergeable ([ADR-0005](./adr/0005-event-time-windows-and-mergeable-aggregates.md)) |
-| Backend | in-process (single binary) | NATS JetStream (partitioned, scaled) |
+| Backend | in-process (single binary), NATS JetStream (partitioned, scaled) | - |
 | Deploy | Helm chart, OTLP `Record` cumulative-to-delta normalization | `Pipeline` CRD + operator |
 
 ## Documentation
@@ -89,7 +89,9 @@ v0.1 shipped the in-process pipeline: IR with static validation, `filter` and tu
 since added the OTLP source/sink (behind the `otlp` feature), event-time windows with
 watermarks and `allowed_lateness`, and a Helm chart. v0.3 adds the `map` and `join`
 transforms and local state inspection - a `State` gRPC API (`Get` and streaming `Watch`)
-served by `run --inspect-addr`, with a `headrace inspect` client.
+served by `run --inspect-addr`, with a `headrace inspect` client. v0.4 adds the NATS
+JetStream backend: durable, partitioned edges that scale a pipeline across workers
+(`--backend nats`), with the WASM transform next.
 
 Roadmap (details in [DESIGN.md](./DESIGN.md#roadmap)) - core processing first, on the
 in-process backend and deployable in a real cluster, before a distributed backend:
