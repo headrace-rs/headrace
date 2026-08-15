@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 #[cfg(feature = "nats")]
 mod nats;
 #[cfg(feature = "nats")]
-pub use nats::{Nats, PartitionConfig};
+pub use nats::{Nats, PartitionConfig, WorkerLease};
 
 /// How a producer derives the partition key for each record: the ordered `group_by`
 /// fields of the stateful transform this edge feeds, or `Unkeyed` when it feeds a

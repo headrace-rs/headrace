@@ -31,6 +31,7 @@ tonic-reflection = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 rmp-serde = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
 
 [features]
 # Exposes automock-generated Backend/Producer/Consumer mocks for downstream tests.
@@ -40,7 +41,7 @@ otlp = ["dep:tonic", "dep:opentelemetry-proto"]
 # State-inspection gRPC server (the `State` service; ADR-0014).
 inspect = ["dep:tonic", "dep:headrace-proto", "dep:tonic-reflection", "dep:tokio-stream"]
 # NATS JetStream backend: durable, partitioned edges for the scaled deployment (ADR-0015).
-nats = ["dep:async-nats", "dep:rmp-serde", "dep:tokio-stream"]
+nats = ["dep:async-nats", "dep:rmp-serde", "dep:tokio-stream", "dep:bytes"]
 
 [dev-dependencies]
 serde_norway.workspace = true

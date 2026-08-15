@@ -128,6 +128,32 @@ async fn two_workers_split_partitions_by_key() {
     );
 }
 
+#[tokio::test]
+#[ignore = "needs Docker; run in the Integration CI job with -- --ignored"]
+async fn a_duplicate_worker_index_is_rejected() {
+    let (_container, url) = start_nats().await;
+
+    let be0 = connect(&url, "lease", part(4, 2, 0)).await;
+    let _held = be0
+        .claim_worker_lease()
+        .await
+        .expect("the first worker claims index 0");
+
+    // A second worker with the same index must fail fast, not silently split state.
+    let dup = connect(&url, "lease", part(4, 2, 0)).await;
+    let err = dup
+        .claim_worker_lease()
+        .await
+        .expect_err("a duplicate index is rejected");
+    assert!(err.to_string().contains("already held"), "{err}");
+
+    // A different index is free to claim.
+    let be1 = connect(&url, "lease", part(4, 2, 1)).await;
+    be1.claim_worker_lease()
+        .await
+        .expect("a different index claims");
+}
+
 /// Retry connect so a slightly-early readiness signal does not flake the test.
 async fn connect(url: &str, pipeline: &str, part: PartitionConfig) -> Nats {
     for _ in 0..30 {

@@ -97,6 +97,11 @@ cargo run -p headrace -- run examples/latency.yaml \
   --backend nats --nats-url nats://127.0.0.1:4222 --workers 2 --worker-index 1
 ```
 
+Each index must be held by exactly one worker. A worker claims its index in a NATS KV lease at
+startup ([ADR-0016](adr/0016-worker-ownership-leases.md)), so a duplicate `--worker-index` (or two
+runs sharing a `--name`) fails fast instead of silently splitting state. In production a
+StatefulSet ordinal supplies a unique index via `HEADRACE_WORKER_INDEX`.
+
 Payloads are MessagePack. Decode one to JSON with `msgpack2json` from
 [`msgpack-tools`](https://github.com/ludocode/msgpack-tools) (reads stdin); `--raw` prints just
 the payload and `--count 1` takes a single message:

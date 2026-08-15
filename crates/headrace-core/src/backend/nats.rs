@@ -15,8 +15,9 @@ use crate::backend::{Backend, Consumer, KeySpec, Producer};
 use crate::record::{AttrValue, Record};
 use anyhow::{Context, Result, bail};
 use async_nats::ConnectOptions;
-use async_nats::jetstream::{self, consumer::pull, stream};
+use async_nats::jetstream::{self, consumer::pull, kv, stream};
 use async_trait::async_trait;
+use bytes::Bytes;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -184,6 +185,21 @@ fn backoff(attempt: u32) -> Duration {
     Duration::from_millis(ms.min(5_000))
 }
 
+/// How long a worker's ownership lease survives without a renewal (ADR-0016). The holder re-puts
+/// its key every third of this, so a crashed worker's index frees after at most this long.
+const LEASE_TTL: Duration = Duration::from_secs(30);
+
+/// The KV bucket holding one ownership lease per worker index for a pipeline.
+fn workers_bucket(pipeline: &str) -> String {
+    format!("hr_{pipeline}_workers")
+}
+
+/// A human-readable identity for a lease value. Informational only - the create-only claim, not
+/// the value, enforces exclusivity. Prefers the pod/host name, else the pid.
+fn worker_id() -> String {
+    std::env::var("HOSTNAME").unwrap_or_else(|_| format!("pid-{}", std::process::id()))
+}
+
 /// A NATS JetStream backend. Cheap to make handles from; the network connection is made
 /// once in [`Nats::connect`], which also provisions a stream per output.
 pub struct Nats {
@@ -232,6 +248,68 @@ impl Nats {
             part,
         })
     }
+
+    /// Claim this worker's index in the pipeline's ownership bucket, failing fast if another
+    /// worker already holds it (ADR-0016). The returned guard renews the lease until dropped;
+    /// dropping it releases the index. Every worker claims, including a lone `--workers 1`, so
+    /// two processes sharing a `--name` also collide.
+    pub async fn claim_worker_lease(&self) -> Result<WorkerLease> {
+        let store = self.workers_kv().await?;
+        let key = self.part.index.to_string();
+        let value = Bytes::from(worker_id().into_bytes());
+
+        let mut attempt = 0;
+        loop {
+            match store.create(&key, value.clone()).await {
+                Ok(_) => break,
+                Err(e) => {
+                    // A present key means a live worker already owns this index (fatal); anything
+                    // else (e.g. NATS briefly unreachable) is transient and retried.
+                    if matches!(store.get(key.as_str()).await, Ok(Some(_))) {
+                        bail!(
+                            "worker-index {} is already held for pipeline `{}`: another worker \
+                             has the same index (check --workers / --worker-index)",
+                            self.part.index,
+                            self.pipeline
+                        );
+                    }
+                    tracing::warn!(error = %e, "claiming the worker lease failed; retrying");
+                    tokio::time::sleep(backoff(attempt)).await;
+                    attempt += 1;
+                }
+            }
+        }
+
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(renew_lease(store, key, value, stop_rx));
+        Ok(WorkerLease { _stop: stop_tx })
+    }
+
+    /// Open (creating if needed) the pipeline's worker-lease bucket. Its TTL is what lets a
+    /// crashed worker's lease expire so a replacement can reclaim the index.
+    async fn workers_kv(&self) -> Result<kv::Store> {
+        let bucket = workers_bucket(&self.pipeline);
+        if let Ok(store) = self.js.get_key_value(&bucket).await {
+            return Ok(store);
+        }
+        match self
+            .js
+            .create_key_value(kv::Config {
+                bucket: bucket.clone(),
+                max_age: LEASE_TTL,
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(store) => Ok(store),
+            // Lost a create race with another worker; the bucket now exists.
+            Err(_) => self
+                .js
+                .get_key_value(&bucket)
+                .await
+                .context("opening the worker-lease bucket"),
+        }
+    }
 }
 
 impl Backend for Nats {
@@ -256,6 +334,39 @@ impl Backend for Nats {
             streams: None,
             last: None,
         })
+    }
+}
+
+/// Holds a worker's index lease for the life of a run (ADR-0016). Dropping it stops the renewal
+/// and releases the index; if the process dies instead, the lease expires after [`LEASE_TTL`].
+#[derive(Debug)]
+pub struct WorkerLease {
+    // Dropping the sender signals [`renew_lease`] to release the key and stop.
+    _stop: tokio::sync::oneshot::Sender<()>,
+}
+
+/// Renew `key` every third of [`LEASE_TTL`] so the lease stays live, until `stop` fires (the guard
+/// dropped), then delete the key to free the index immediately rather than waiting out the TTL.
+async fn renew_lease(
+    store: kv::Store,
+    key: String,
+    value: Bytes,
+    mut stop: tokio::sync::oneshot::Receiver<()>,
+) {
+    let mut tick = tokio::time::interval(LEASE_TTL / 3);
+    tick.tick().await; // the immediate first tick; the key was just created
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {
+                if let Err(e) = store.put(&key, value.clone()).await {
+                    tracing::warn!(key = %key, error = %e, "renewing the worker lease failed");
+                }
+            }
+            _ = &mut stop => {
+                let _ = store.delete(&key).await;
+                return;
+            }
+        }
     }
 }
 
@@ -420,6 +531,7 @@ mod tests {
         // forbids dots in them).
         assert_eq!(stream_name("latency", "w"), "hr_latency_w");
         assert_eq!(durable_name("latency", "w", 3), "hr_latency_w_3_sink");
+        assert_eq!(workers_bucket("latency"), "hr_latency_workers");
     }
 
     #[test]

@@ -1011,6 +1011,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "async-trait",
+ "bytes",
  "headrace-ir",
  "headrace-proto",
  "humantime",

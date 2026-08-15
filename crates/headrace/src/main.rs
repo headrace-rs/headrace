@@ -266,6 +266,9 @@ async fn run_pipeline(
             let outputs = output_ids(&pipeline);
             let nats =
                 headrace_core::backend::Nats::connect(&url, &name, &outputs, nats.part).await?;
+            // Hold the ownership lease for the run so a duplicate worker index fails fast
+            // (ADR-0016); dropping it after `run` releases the index.
+            let _lease = nats.claim_worker_lease().await?;
             headrace_core::run(pipeline, nats, recorder, opts).await
         }
     }
