@@ -11,7 +11,7 @@ pipeline runs, or `headrace validate` before it does.
 
 ## Late records
 
-**Symptom:** `headrace.records.late` climbs.
+**Symptom:** `headrace.records.dropped{reason=late}` climbs.
 
 A record whose window has already fired is dropped and counted here. The cause is that
 `allowed_lateness` is smaller than the source's real out-of-orderness, so windows fire before

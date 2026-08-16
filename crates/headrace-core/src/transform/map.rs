@@ -6,7 +6,7 @@
 
 use super::expr::Expr;
 use crate::backend::{Consumer, Producer};
-use crate::metrics::NodeMetrics;
+use crate::metrics::{DropReason, NodeMetrics};
 use crate::record::Fault;
 use anyhow::{Result, bail};
 use headrace_ir::FaultAction;
@@ -43,7 +43,7 @@ pub(super) async fn run(
             Err(Fault::Invalid) => on_invalid,
         };
         match policy {
-            FaultAction::Skip => nm.dropped(1),
+            FaultAction::Skip => nm.dropped(1, DropReason::Invalid),
             FaultAction::Error => bail!("map: could not evaluate the expression for a record"),
         }
     }

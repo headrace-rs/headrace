@@ -33,6 +33,33 @@ impl NodeKind {
     }
 }
 
+/// Why a record was dropped - the low-cardinality `reason` label on `headrace.records.dropped`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropReason {
+    /// A filter predicate rejected it.
+    Filtered,
+    /// A missing/non-numeric field or an inevaluable expression, under a `skip` policy.
+    Invalid,
+    /// It arrived after its window had already fired (`allowed_lateness` too small).
+    Late,
+    /// A join bucket was evicted before every input supplied a value.
+    Incomplete,
+    /// The node was at its `max_groups` cap (group-cardinality shedding).
+    Capped,
+}
+
+impl DropReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DropReason::Filtered => "filtered",
+            DropReason::Invalid => "invalid",
+            DropReason::Late => "late",
+            DropReason::Incomplete => "incomplete",
+            DropReason::Capped => "capped",
+        }
+    }
+}
+
 /// Binds per-node recorders. `Send + Sync`; one instance is shared across all nodes.
 pub trait Metrics: Send + Sync {
     /// Bind a recorder to one node. Called once per node at wiring time - the place to
@@ -45,14 +72,8 @@ pub trait Metrics: Send + Sync {
 pub trait NodeRecorder: Send + Sync {
     /// A record was emitted/forwarded.
     fn record_out(&self);
-    /// `n` records were dropped (filtered out, or `on_missing = skip`).
-    fn record_dropped(&self, n: u64);
-    /// `n` records were dropped as too late - their window had already fired. A nonzero
-    /// rate here means `allowed_lateness` is too small for the source's out-of-orderness.
-    fn record_late(&self, n: u64);
-    /// `n` records were dropped because the node was at its `max_groups` cap. A nonzero rate
-    /// means high group cardinality - a misconfigured `group_by` or an attack.
-    fn record_capped(&self, n: u64);
+    /// `n` records were dropped for `reason` (see [`DropReason`]).
+    fn record_dropped(&self, n: u64, reason: DropReason);
     /// A window flushed, emitting `groups` aggregates.
     fn window_flushed(&self, groups: u64);
     /// The node's task terminated with an error.
@@ -72,9 +93,7 @@ struct NoopRecorder;
 
 impl NodeRecorder for NoopRecorder {
     fn record_out(&self) {}
-    fn record_dropped(&self, _: u64) {}
-    fn record_late(&self, _: u64) {}
-    fn record_capped(&self, _: u64) {}
+    fn record_dropped(&self, _: u64, _: DropReason) {}
     fn window_flushed(&self, _: u64) {}
     fn node_error(&self) {}
 }
@@ -96,16 +115,8 @@ impl NodeMetrics {
         self.0.record_out();
     }
 
-    pub fn dropped(&self, n: u64) {
-        self.0.record_dropped(n);
-    }
-
-    pub fn late(&self, n: u64) {
-        self.0.record_late(n);
-    }
-
-    pub fn capped(&self, n: u64) {
-        self.0.record_capped(n);
+    pub fn dropped(&self, n: u64, reason: DropReason) {
+        self.0.record_dropped(n, reason);
     }
 
     pub fn window_flushed(&self, groups: u64) {

@@ -489,7 +489,7 @@ pub(crate) async fn shutdown_signal() {
 mod tests {
     use super::*;
     use crate::backend::InProcess;
-    use crate::metrics::{Metrics, NodeRecorder};
+    use crate::metrics::{DropReason, Metrics, NodeRecorder};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -841,9 +841,7 @@ mod tests {
     }
     impl NodeRecorder for ErrRecorder {
         fn record_out(&self) {}
-        fn record_dropped(&self, _: u64) {}
-        fn record_late(&self, _: u64) {}
-        fn record_capped(&self, _: u64) {}
+        fn record_dropped(&self, _: u64, _: DropReason) {}
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {
             self.errors.fetch_add(1, Ordering::Relaxed);

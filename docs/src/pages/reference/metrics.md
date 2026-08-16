@@ -24,26 +24,35 @@ headrace --metrics stdout run pipeline.yaml        # print to stderr, for debugg
 ## Instruments
 
 Every metric is attributed by `node` (the node id) and `kind` (`source`, `filter`, `window`,
-`map`, `join`, `sink`). The two window instruments carry `node` only.
+`map`, `join`, `sink`); `records.dropped` adds a `reason`. The two window instruments carry
+`node` only.
 
 | Metric | Type | Attributes | Meaning |
 |---|---|---|---|
 | `headrace.records.out` | counter | node, kind | Records a node emitted or forwarded. |
-| `headrace.records.dropped` | counter | node, kind | Records dropped (filtered, or a missing/invalid aggregate field). |
-| `headrace.records.late` | counter | node, kind | Records dropped as too late - their window had already fired. |
-| `headrace.records.capped` | counter | node, kind | Records dropped because a node was at its `max_groups` cap. |
+| `headrace.records.dropped` | counter | node, kind, reason | Records dropped, split by `reason` (below). |
 | `headrace.window.flushes` | counter | node | Window flush events. |
 | `headrace.window.groups` | histogram | node | Aggregate groups emitted per flush. |
 | `headrace.node.errors` | counter | node, kind | Node tasks that terminated with an error. |
 
+`reason` on `headrace.records.dropped`:
+
+| `reason` | Meaning |
+|---|---|
+| `filtered` | A `filter` predicate rejected the record. |
+| `invalid` | A missing/non-numeric field or an inevaluable expression, under a `skip` policy. |
+| `late` | The record arrived after its window had already fired. |
+| `incomplete` | A `join` bucket was evicted before every input supplied a value. |
+| `capped` | The node was at its `max_groups` cap. |
+
 ## Reading them
 
-- A rising `headrace.records.late` means `allowed_lateness` is too small for the source's
-  out-of-orderness - see [Troubleshooting](/troubleshooting#late-records).
-- `headrace.records.dropped` on a `window` or `map` node points at a missing or non-numeric
-  field with an `on_missing` / `on_invalid` policy of `skip`.
+- A rising `records.dropped{reason=late}` means `allowed_lateness` is too small for the
+  source's out-of-orderness - see [Troubleshooting](/troubleshooting#late-records).
+- `records.dropped{reason=invalid}` on a `window` or `map` node points at a missing or
+  non-numeric field with an `on_missing` / `on_invalid` policy of `skip`.
 - `headrace.window.groups` shows the cardinality of each flush - useful for spotting a
   `group_by` that fans out more than you expected.
-- `headrace.records.capped` is nonzero only when a node hit its `max_groups` cap: the
+- `records.dropped{reason=capped}` is nonzero only when a node hit its `max_groups` cap: the
   `group_by` cardinality outran the limit (a misconfigured key or an attack). Raise the cap or
   narrow the `group_by`.

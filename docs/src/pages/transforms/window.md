@@ -71,8 +71,8 @@ arrival (in event time):  t=1   t=3   t=6   t=4   t=8
 ```
 
 A record whose window has already fired is **dropped** and counted on
-`headrace.records.late`. A nonzero late rate means `allowed_lateness` is too small for the
-source's out-of-orderness.
+`headrace.records.dropped{reason=late}`. A nonzero late rate means `allowed_lateness` is too
+small for the source's out-of-orderness.
 
 ## idle_timeout
 
@@ -86,8 +86,8 @@ still flushes open windows regardless.
 A high-cardinality `group_by` - unbounded attribute values, or an adversarial stream - grows
 window state without limit and can OOM a worker. `max_groups` caps the distinct groups an open
 window holds; once it is reached, records that would open a new group are dropped and counted as
-[`headrace.records.capped`](/reference/metrics), while existing groups keep aggregating. Off by
-default (unbounded); set it before taking untrusted traffic.
+[`headrace.records.dropped{reason=capped}`](/reference/metrics), while existing groups keep
+aggregating. Off by default (unbounded); set it before taking untrusted traffic.
 
 ## Configuration
 

@@ -2,7 +2,7 @@
 //! Stateless.
 
 use crate::backend::{Consumer, Producer};
-use crate::metrics::NodeMetrics;
+use crate::metrics::{DropReason, NodeMetrics};
 use crate::record::Record;
 use anyhow::Result;
 
@@ -30,7 +30,7 @@ pub(super) async fn run(
                 break;
             }
         } else {
-            nm.dropped(1);
+            nm.dropped(1, DropReason::Filtered);
         }
     }
     Ok(())
@@ -154,11 +154,9 @@ mod backend_tests {
         fn record_out(&self) {
             self.out.fetch_add(1, Ordering::Relaxed);
         }
-        fn record_dropped(&self, n: u64) {
+        fn record_dropped(&self, n: u64, _: DropReason) {
             self.dropped.fetch_add(n, Ordering::Relaxed);
         }
-        fn record_late(&self, _: u64) {}
-        fn record_capped(&self, _: u64) {}
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {}
     }

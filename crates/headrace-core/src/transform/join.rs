@@ -12,7 +12,7 @@
 use super::expr::Expr;
 use crate::backend::{Consumer, Producer};
 use crate::inspect::{GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish, recv_query};
-use crate::metrics::NodeMetrics;
+use crate::metrics::{DropReason, NodeMetrics};
 use crate::record::{AttrValue, Attrs, Record};
 use anyhow::{Result, anyhow};
 use std::collections::{BTreeMap, HashMap};
@@ -99,7 +99,7 @@ pub(super) async fn run(
         // An existing bucket always takes the record; a new one is refused once the node is
         // at max_groups, shedding rather than growing buckets without bound.
         if !buckets.contains_key(&key) && max_groups.is_some_and(|c| buckets.len() >= c) {
-            nm.capped(1);
+            nm.dropped(1, DropReason::Capped);
         } else {
             let bucket = buckets.entry(key.clone()).or_insert_with(|| Bucket {
                 start,
@@ -122,7 +122,8 @@ pub(super) async fn run(
                         }
                         nm.out();
                     }
-                    None => nm.dropped(1), // the reduce expression could not be evaluated
+                    // the reduce expression could not be evaluated
+                    None => nm.dropped(1, DropReason::Invalid),
                 }
             }
         }
@@ -136,7 +137,7 @@ pub(super) async fn run(
             .collect();
         for k in stale {
             buckets.remove(&k);
-            nm.dropped(1);
+            nm.dropped(1, DropReason::Incomplete);
         }
 
         publish(&inspect, || snapshot(&buckets, &inputs));
@@ -386,7 +387,7 @@ mod tests {
         );
     }
 
-    /// A `Metrics` that only counts `record_capped`, for the cap test.
+    /// A `Metrics` that only counts drops with reason `Capped`, for the cap test.
     struct CapCounter(Arc<std::sync::atomic::AtomicU64>);
     impl crate::metrics::Metrics for CapCounter {
         fn node(&self, _: &str, _: NodeKind) -> Arc<dyn crate::metrics::NodeRecorder> {
@@ -396,10 +397,10 @@ mod tests {
     struct CapRec(Arc<std::sync::atomic::AtomicU64>);
     impl crate::metrics::NodeRecorder for CapRec {
         fn record_out(&self) {}
-        fn record_dropped(&self, _: u64) {}
-        fn record_late(&self, _: u64) {}
-        fn record_capped(&self, n: u64) {
-            self.0.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+        fn record_dropped(&self, n: u64, reason: DropReason) {
+            if reason == DropReason::Capped {
+                self.0.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+            }
         }
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {}

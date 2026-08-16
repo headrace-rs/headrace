@@ -6,7 +6,7 @@
 
 use crate::backend::{Consumer, Producer};
 use crate::inspect::{GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish, recv_query};
-use crate::metrics::NodeMetrics;
+use crate::metrics::{DropReason, NodeMetrics};
 use crate::record::{AttrValue, Attrs, Fault, Record};
 use anyhow::{Result, bail};
 use headrace_ir::{Aggregate, AggregateOp, FaultAction};
@@ -471,17 +471,17 @@ fn meter_drops(win: &mut Window, nm: &NodeMetrics) {
             skipped,
             "window: dropped records with missing/non-numeric field"
         );
-        nm.dropped(skipped);
+        nm.dropped(skipped, DropReason::Invalid);
     }
     let late = win.drain_late();
     if late > 0 {
         tracing::warn!(late, "window: dropped records past allowed_lateness");
-        nm.late(late);
+        nm.dropped(late, DropReason::Late);
     }
     let capped = win.drain_capped();
     if capped > 0 {
         tracing::warn!(capped, "window: dropped records over max_groups");
-        nm.capped(capped);
+        nm.dropped(capped, DropReason::Capped);
     }
 }
 

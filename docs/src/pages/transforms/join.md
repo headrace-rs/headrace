@@ -62,8 +62,8 @@ land on the same worker: the join's buffered state stays local, with nothing mov
 workers (ADR-0007, ADR-0012).
 
 `max_groups` caps the distinct aligned groups (open buckets) the join buffers; new groups past
-the cap are dropped and metered as [`headrace.records.capped`](/reference/metrics), bounding
-memory under a high-cardinality key. Off by default.
+the cap are dropped and metered as [`headrace.records.dropped{reason=capped}`](/reference/metrics),
+bounding memory under a high-cardinality key. Off by default.
 
 ## Validation
 
