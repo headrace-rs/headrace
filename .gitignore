@@ -5,6 +5,9 @@ Cargo.lock.bak
 # Combined web build output (landing at /, Vocs docs at /docs)
 /dist
 
+# Wrangler local scratch (created when deploying dist/ to Cloudflare)
+/.wrangler
+
 ### macOS ###
 .DS_Store
 .AppleDouble
