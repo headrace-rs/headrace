@@ -29,3 +29,4 @@ Significant architectural decisions are recorded here as ADRs, using the
 - [0014](./0014-local-state-inspection.md) - Local state inspection over gRPC
 - [0015](./0015-nats-jetstream-backend.md) - NATS JetStream backend: streams, acks, and workers
 - [0016](./0016-worker-ownership-leases.md) - Worker ownership leases: fail fast on a duplicate index
+- [0017](./0017-sink-delivery-policy.md) - Sink delivery: retry through an outage

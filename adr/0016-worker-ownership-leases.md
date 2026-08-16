@@ -18,7 +18,7 @@ assignment rather than replace it.
 
 ## Decision
 
-We will lease each worker index in NATS KV, which rides on the JetStream we already need.
+We will lease each worker index in NATS KV, which reuses the JetStream we already need.
 
 - At startup a worker create-claims the key for its index in a per-pipeline bucket
   (`hr_<pipeline>_workers`). A held key means another worker owns the index, and startup errors. A
