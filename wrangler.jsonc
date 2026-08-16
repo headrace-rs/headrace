@@ -1,0 +1,12 @@
+{
+  // Cloudflare deploy for the combined static site that scripts/build-web.sh
+  // assembles into dist/ (landing at /, Vocs docs at /docs). This is an
+  // assets-only Worker: no server script, so "main" is omitted and Cloudflare
+  // serves dist/ directly. The connected Worker is named "headrace".
+  "name": "headrace",
+  "compatibility_date": "2026-08-16",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}
