@@ -1,3 +1,9 @@
+## 0.1.17 (2026-08-16)
+
+### Features
+
+- fail fast on a duplicate worker index
+
 ## 0.1.16 (2026-08-15)
 
 ### Features
