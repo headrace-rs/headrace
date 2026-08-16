@@ -33,6 +33,7 @@ pub(super) struct Spec {
     pub inputs: Vec<String>,
     pub name: Option<String>,
     pub value: Option<String>,
+    pub max_groups: Option<usize>,
 }
 
 pub(super) async fn run(
@@ -47,6 +48,7 @@ pub(super) async fn run(
         inputs,
         name,
         value,
+        max_groups,
     } = spec;
     let expr = match &value {
         Some(v) => Some(Expr::parse(v).map_err(|e| anyhow!("invalid join expression: {}", e.0))?),
@@ -94,28 +96,34 @@ pub(super) async fn run(
         max_end[i] = max_end[i].max(end);
 
         let key = bucket_key(start, end, &rec.attrs);
-        let bucket = buckets.entry(key.clone()).or_insert_with(|| Bucket {
-            start,
-            end,
-            labels: rec.attrs.clone(),
-            values: vec![None; n],
-            filled: 0,
-        });
-        if bucket.values[i].is_none() {
-            bucket.filled += 1;
-        }
-        bucket.values[i] = Some(rec.value);
+        // An existing bucket always takes the record; a new one is refused once the node is
+        // at max_groups, shedding rather than growing buckets without bound.
+        if !buckets.contains_key(&key) && max_groups.is_some_and(|c| buckets.len() >= c) {
+            nm.capped(1);
+        } else {
+            let bucket = buckets.entry(key.clone()).or_insert_with(|| Bucket {
+                start,
+                end,
+                labels: rec.attrs.clone(),
+                values: vec![None; n],
+                filled: 0,
+            });
+            if bucket.values[i].is_none() {
+                bucket.filled += 1;
+            }
+            bucket.values[i] = Some(rec.value);
 
-        if bucket.filled == n {
-            let bucket = buckets.remove(&key).expect("bucket just updated");
-            match emit(&out_name, &inputs, expr.as_ref(), bucket)? {
-                Some(record) => {
-                    if tx.send(record).await.is_err() {
-                        return Ok(());
+            if bucket.filled == n {
+                let bucket = buckets.remove(&key).expect("bucket just updated");
+                match emit(&out_name, &inputs, expr.as_ref(), bucket)? {
+                    Some(record) => {
+                        if tx.send(record).await.is_err() {
+                            return Ok(());
+                        }
+                        nm.out();
                     }
-                    nm.out();
+                    None => nm.dropped(1), // the reduce expression could not be evaluated
                 }
-                None => nm.dropped(1), // the reduce expression could not be evaluated
             }
         }
 
@@ -312,6 +320,7 @@ mod tests {
             inputs: ids,
             name: None,
             value: Some("a + b".into()),
+            max_groups: None,
         };
         tokio::spawn(run(spec, rxs, tx, nm, Some(inspect)));
 
@@ -342,6 +351,58 @@ mod tests {
         assert!(snap.groups.is_empty(), "a fired bucket leaves the snapshot");
 
         drop((fa, fb));
+    }
+
+    #[tokio::test]
+    async fn max_groups_sheds_new_buckets() {
+        // Feed only input `a`, so records arrive in one ordered stream (no cross-input race):
+        // two keys fill the cap, the third opens no bucket and is metered as capped.
+        let mut be = InProcess::new(64);
+        let fa = be.producer("a", &KeySpec::Unkeyed);
+        let fb = be.producer("b", &KeySpec::Unkeyed);
+        let rxs = vec![be.consumer("a"), be.consumer("b")];
+        let tx = be.producer("out", &KeySpec::Unkeyed);
+        drop(be);
+        let capped = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let metrics: SharedMetrics = Arc::new(CapCounter(capped.clone()));
+        let nm = NodeMetrics::bind(&metrics, "j", NodeKind::Join);
+        let spec = Spec {
+            id: "j".into(),
+            inputs: vec!["a".into(), "b".into()],
+            name: None,
+            value: Some("a + b".into()),
+            max_groups: Some(2),
+        };
+        let node = tokio::spawn(run(spec, rxs, tx, nm, None));
+        for svc in ["s1", "s2", "s3"] {
+            fa.send(wrec(svc, 0, 60, 1.0)).await.unwrap();
+        }
+        drop((fa, fb)); // both inputs close, so the join drains and returns
+        node.await.unwrap().unwrap();
+        assert_eq!(
+            capped.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "the third key was shed by max_groups"
+        );
+    }
+
+    /// A `Metrics` that only counts `record_capped`, for the cap test.
+    struct CapCounter(Arc<std::sync::atomic::AtomicU64>);
+    impl crate::metrics::Metrics for CapCounter {
+        fn node(&self, _: &str, _: NodeKind) -> Arc<dyn crate::metrics::NodeRecorder> {
+            Arc::new(CapRec(self.0.clone()))
+        }
+    }
+    struct CapRec(Arc<std::sync::atomic::AtomicU64>);
+    impl crate::metrics::NodeRecorder for CapRec {
+        fn record_out(&self) {}
+        fn record_dropped(&self, _: u64) {}
+        fn record_late(&self, _: u64) {}
+        fn record_capped(&self, n: u64) {
+            self.0.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+        }
+        fn window_flushed(&self, _: u64) {}
+        fn node_error(&self) {}
     }
 
     /// Ask the join node for its current snapshot.
@@ -387,6 +448,7 @@ mod tests {
             inputs: ids,
             name: None,
             value: value.map(String::from),
+            max_groups: None,
         };
         tokio::spawn(run(spec, rxs, tx, nm, None));
         (feeders, out)

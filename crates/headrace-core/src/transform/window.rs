@@ -110,9 +110,13 @@ pub struct Window {
     /// Open windows keyed by start; each holds its per-group accumulators. Ordered so
     /// the earliest-ready windows fire first.
     windows: BTreeMap<u64, HashMap<GroupKey, Agg>>,
+    /// Cap on distinct groups per open window; `None` is unbounded.
+    max_groups: Option<usize>,
     max_event: u64,
     skipped: u64,
     late: u64,
+    /// Records refused because their window was already at `max_groups`.
+    capped: u64,
 }
 
 /// Parsed, typed settings for a [`Window`]. Build a `Window` with `Window::from` /
@@ -130,6 +134,8 @@ pub struct WindowConfig {
     pub aggregate: Aggregate,
     /// Renames the emitted metric; `None` keeps each group's source name.
     pub name: Option<String>,
+    /// Cap on distinct groups per open window; `None` is unbounded.
+    pub max_groups: Option<usize>,
 }
 
 impl WindowConfig {
@@ -144,6 +150,7 @@ impl WindowConfig {
             group_by: Vec::new(),
             aggregate,
             name: None,
+            max_groups: None,
         }
     }
 }
@@ -159,9 +166,11 @@ impl From<WindowConfig> for Window {
             aggregate: cfg.aggregate,
             name: cfg.name,
             windows: BTreeMap::new(),
+            max_groups: cfg.max_groups,
             max_event: 0,
             skipped: 0,
             late: 0,
+            capped: 0,
         }
     }
 }
@@ -221,22 +230,35 @@ impl Window {
             }
         };
         let watermark = self.watermark();
+        let cap = self.max_groups;
         let (key, attrs) = group_key(rec, &self.group_by);
         let mut folded = false;
+        let mut capped = false;
         for start in self.window_starts(rec.ts_nanos) {
             if start + self.size_nanos <= watermark {
                 continue; // this window has already fired
             }
-            self.windows
-                .entry(start)
-                .or_default()
-                .entry(key.clone())
-                .or_insert_with(|| Agg::new(rec.name.clone(), attrs.clone()))
-                .add(v);
-            folded = true;
+            let groups = self.windows.entry(start).or_default();
+            if let Some(agg) = groups.get_mut(&key) {
+                agg.add(v); // an existing group always updates, regardless of the cap
+                folded = true;
+            } else if cap.is_some_and(|c| groups.len() >= c) {
+                capped = true; // window at its group cap; refuse this new group
+            } else {
+                groups
+                    .entry(key.clone())
+                    .or_insert_with(|| Agg::new(rec.name.clone(), attrs.clone()))
+                    .add(v);
+                folded = true;
+            }
         }
         if folded {
             self.max_event = self.max_event.max(rec.ts_nanos);
+        } else if capped {
+            // A shed record still arrived, so it advances event time, exactly as a skipped one
+            // does above - a saturated window must not stall the watermark.
+            self.max_event = self.max_event.max(rec.ts_nanos);
+            self.capped += 1;
         } else {
             self.late += 1;
         }
@@ -251,6 +273,11 @@ impl Window {
     /// Records dropped as late (their window had already fired) since the last call.
     pub fn drain_late(&mut self) -> u64 {
         std::mem::take(&mut self.late)
+    }
+
+    /// Records refused since the last call because their window was at `max_groups`.
+    pub fn drain_capped(&mut self) -> u64 {
+        std::mem::take(&mut self.capped)
     }
 
     /// Emit and remove every window the watermark has passed.
@@ -345,6 +372,7 @@ pub(super) struct Spec {
     pub group_by: Vec<String>,
     pub aggregate: Aggregate,
     pub name: Option<String>,
+    pub max_groups: Option<usize>,
 }
 
 /// Drive the window in event time: fold records, firing each window when the watermark
@@ -366,6 +394,7 @@ pub(super) async fn run(
         group_by,
         aggregate,
         name,
+        max_groups,
     } = spec;
     let size = humantime::parse_duration(&size)?;
     let slide = match &slide {
@@ -387,6 +416,7 @@ pub(super) async fn run(
         group_by,
         aggregate,
         name,
+        max_groups,
     });
 
     loop {
@@ -447,6 +477,11 @@ fn meter_drops(win: &mut Window, nm: &NodeMetrics) {
     if late > 0 {
         tracing::warn!(late, "window: dropped records past allowed_lateness");
         nm.late(late);
+    }
+    let capped = win.drain_capped();
+    if capped > 0 {
+        tracing::warn!(capped, "window: dropped records over max_groups");
+        nm.capped(capped);
     }
 }
 
@@ -532,6 +567,34 @@ mod tests {
         w.on_record(&rec("m", 1.0, &[("k", AttrValue::Str("1".into()))]))
             .unwrap();
         assert_eq!(w.drain_all().len(), 2);
+    }
+
+    #[test]
+    fn max_groups_sheds_new_groups_and_keeps_existing() {
+        // Cap at two groups per window: `a` and `b` fill it, `c` is refused, `a` repeats.
+        let mut w = Window::from(WindowConfig {
+            group_by: vec!["service.name".into()],
+            max_groups: Some(2),
+            ..WindowConfig::tumbling(
+                Duration::from_nanos(SIZE),
+                agg(AggregateOp::Count, None, FaultAction::Skip),
+            )
+        });
+        for svc in ["a", "b", "c", "a"] {
+            w.on_record(&rec(
+                "m",
+                1.0,
+                &[("service.name", AttrValue::Str(svc.into()))],
+            ))
+            .unwrap();
+        }
+        // `c` would be a third group past the cap: one record shed.
+        assert_eq!(w.drain_capped(), 1);
+        let mut out = w.drain_all();
+        out.sort_by(|x, y| x.value.total_cmp(&y.value));
+        assert_eq!(out.len(), 2, "only the two admitted groups emit");
+        assert_eq!(out[0].value, 1.0); // b: one record
+        assert_eq!(out[1].value, 2.0); // a: still updates past the cap
     }
 
     // --- on_missing policy ---

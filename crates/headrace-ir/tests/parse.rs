@@ -162,6 +162,36 @@ fn parses_join() {
 }
 
 #[test]
+fn window_and_join_parse_max_groups() {
+    let p: Pipeline = serde_norway::from_str(
+        r#"
+        sources:
+          - { type: generator, id: s1, interval: 1s }
+          - { type: generator, id: s2, interval: 1s }
+        transforms:
+          - { type: window, id: w1, input: s1, size: 5s, group_by: [k],
+              aggregate: { op: count }, max_groups: 1000 }
+          - { type: window, id: w2, input: s2, size: 5s, group_by: [k], aggregate: { op: count } }
+          - { type: join, id: j, inputs: [w1, w2], value: "w1 + w2", max_groups: 500 }
+        sinks: [{ type: stdout, id: out, input: j }]
+        "#,
+    )
+    .unwrap();
+    let Transform::Window { max_groups, .. } = &p.transforms[0] else {
+        panic!("expected a window");
+    };
+    assert_eq!(*max_groups, Some(1000));
+    let Transform::Window { max_groups, .. } = &p.transforms[1] else {
+        panic!("expected a window");
+    };
+    assert_eq!(*max_groups, None, "unset defaults to unbounded");
+    let Transform::Join { max_groups, .. } = &p.transforms[2] else {
+        panic!("expected a join");
+    };
+    assert_eq!(*max_groups, Some(500));
+}
+
+#[test]
 fn pipeline_roundtrips_through_json() {
     let p: Pipeline = serde_norway::from_str(EXAMPLE).unwrap();
     let json = serde_json::to_string(&p).unwrap();

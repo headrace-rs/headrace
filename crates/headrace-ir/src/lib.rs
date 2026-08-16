@@ -88,6 +88,10 @@ pub enum Transform {
         #[serde(default)]
         group_by: Vec<String>,
         aggregate: Aggregate,
+        /// Cap on distinct groups held per open window. Records that would form a new group
+        /// past the cap are dropped and metered (`headrace.records.capped`). Unset is unbounded.
+        #[serde(default)]
+        max_groups: Option<usize>,
     },
     /// Rewrite each record's `value` from a closed numeric expression over `value` and
     /// numeric attributes, e.g. `errors / total` or `value / 1000`.
@@ -122,6 +126,10 @@ pub enum Transform {
         /// ids). Omit to carry each input's value as an attribute for a downstream node.
         #[serde(default)]
         value: Option<String>,
+        /// Cap on distinct aligned groups (open buckets). New groups past the cap are dropped
+        /// and metered (`headrace.records.capped`). Unset is unbounded.
+        #[serde(default)]
+        max_groups: Option<usize>,
     },
 }
 

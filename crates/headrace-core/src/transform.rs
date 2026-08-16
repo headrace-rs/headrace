@@ -38,6 +38,7 @@ pub async fn run(
             idle_timeout,
             group_by,
             aggregate,
+            max_groups,
             ..
         } => {
             let spec = window::Spec {
@@ -48,6 +49,7 @@ pub async fn run(
                 group_by,
                 aggregate,
                 name,
+                max_groups,
             };
             window::run(spec, one(rxs), tx, nm, inspect).await
         }
@@ -63,12 +65,14 @@ pub async fn run(
             inputs,
             name,
             value,
+            max_groups,
         } => {
             let spec = join::Spec {
                 id,
                 inputs,
                 name,
                 value,
+                max_groups,
             };
             join::run(spec, rxs, tx, nm, inspect).await
         }

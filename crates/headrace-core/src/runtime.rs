@@ -40,8 +40,15 @@ pub fn validate(p: &Pipeline) -> Result<(), ValidationError> {
                 slide,
                 allowed_lateness,
                 idle_timeout,
+                max_groups,
                 ..
             } => {
+                if matches!(max_groups, Some(0)) {
+                    return Err(ValidationError::InvalidWindow {
+                        node: id.to_string(),
+                        reason: "max_groups must be greater than zero".to_string(),
+                    });
+                }
                 let size = parse_duration(id, size)?;
                 if let Some(lateness) = allowed_lateness {
                     parse_duration(id, lateness)?;
@@ -124,9 +131,21 @@ fn check_joins(p: &Pipeline) -> Result<(), ValidationError> {
         })
         .collect();
     for o in &p.transforms {
-        let Transform::Join { id, inputs, .. } = o else {
+        let Transform::Join {
+            id,
+            inputs,
+            max_groups,
+            ..
+        } = o
+        else {
             continue;
         };
+        if matches!(max_groups, Some(0)) {
+            return Err(ValidationError::InvalidJoin {
+                node: id.clone(),
+                reason: "max_groups must be greater than zero".to_string(),
+            });
+        }
         let mut spec: Option<(&[String], &str)> = None;
         for input in inputs {
             let s = *windows
@@ -555,6 +574,38 @@ mod tests {
     }
 
     #[test]
+    fn rejects_zero_max_groups() {
+        let w = pipeline(
+            r#"
+            sources: [{ type: generator, id: gen, interval: 1s }]
+            transforms:
+              - { type: window, id: w, input: gen, size: 5s, aggregate: { op: count }, max_groups: 0 }
+            sinks: [{ type: stdout, id: out, input: w }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&w),
+            Err(ValidationError::InvalidWindow { .. })
+        ));
+        let j = pipeline(
+            r#"
+            sources:
+              - { type: generator, id: s1, interval: 1s }
+              - { type: generator, id: s2, interval: 1s }
+            transforms:
+              - { type: window, id: w1, input: s1, size: 5s, aggregate: { op: count } }
+              - { type: window, id: w2, input: s2, size: 5s, aggregate: { op: count } }
+              - { type: join, id: jn, inputs: [w1, w2], value: "w1 + w2", max_groups: 0 }
+            sinks: [{ type: stdout, id: out, input: jn }]
+        "#,
+        );
+        assert!(matches!(
+            validate(&j),
+            Err(ValidationError::InvalidJoin { .. })
+        ));
+    }
+
+    #[test]
     fn rejects_slide_longer_than_size() {
         let p = pipeline(
             r#"
@@ -792,6 +843,7 @@ mod tests {
         fn record_out(&self) {}
         fn record_dropped(&self, _: u64) {}
         fn record_late(&self, _: u64) {}
+        fn record_capped(&self, _: u64) {}
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {
             self.errors.fetch_add(1, Ordering::Relaxed);
