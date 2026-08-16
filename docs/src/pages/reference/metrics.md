@@ -31,6 +31,7 @@ Every metric is attributed by `node` (the node id) and `kind` (`source`, `filter
 | `headrace.records.out` | counter | node, kind | Records a node emitted or forwarded. |
 | `headrace.records.dropped` | counter | node, kind | Records dropped (filtered, or a missing/invalid aggregate field). |
 | `headrace.records.late` | counter | node, kind | Records dropped as too late - their window had already fired. |
+| `headrace.records.capped` | counter | node, kind | Records dropped because a node was at its `max_groups` cap. |
 | `headrace.window.flushes` | counter | node | Window flush events. |
 | `headrace.window.groups` | histogram | node | Aggregate groups emitted per flush. |
 | `headrace.node.errors` | counter | node, kind | Node tasks that terminated with an error. |
@@ -43,3 +44,6 @@ Every metric is attributed by `node` (the node id) and `kind` (`source`, `filter
   field with an `on_missing` / `on_invalid` policy of `skip`.
 - `headrace.window.groups` shows the cardinality of each flush - useful for spotting a
   `group_by` that fans out more than you expected.
+- `headrace.records.capped` is nonzero only when a node hit its `max_groups` cap: the
+  `group_by` cardinality outran the limit (a misconfigured key or an attack). Raise the cap or
+  narrow the `group_by`.

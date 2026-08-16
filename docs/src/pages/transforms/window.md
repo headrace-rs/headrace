@@ -81,6 +81,14 @@ last windows open. Set `idle_timeout` to force every open window to flush after 
 wall-clock silence. Off by default (windowing stays purely event-time); a clean shutdown
 still flushes open windows regardless.
 
+## max_groups
+
+A high-cardinality `group_by` - unbounded attribute values, or an adversarial stream - grows
+window state without limit and can OOM a worker. `max_groups` caps the distinct groups an open
+window holds; once it is reached, records that would open a new group are dropped and counted as
+[`headrace.records.capped`](/reference/metrics), while existing groups keep aggregating. Off by
+default (unbounded); set it before taking untrusted traffic.
+
 ## Configuration
 
 ```yaml
@@ -94,6 +102,7 @@ transforms:
     allowed_lateness: 2s     # optional: event-time grace before firing (default: none)
     idle_timeout: 30s        # optional: force-close quiet windows (default: off)
     group_by: [service.name, http.route]
+    max_groups: 10000        # optional: cap distinct groups per window; sheds beyond it (default: unbounded)
     aggregate:               # required: how to reduce each group
       op: avg                # count | sum | min | max | avg
       field: duration        # optional: attribute to reduce (default: the record's value)

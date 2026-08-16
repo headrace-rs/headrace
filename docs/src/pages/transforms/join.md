@@ -18,6 +18,7 @@ transforms:
     inputs: [checkout_p99, cart_p99]   # any number of windowed inputs
     name: "latency.diff"               # output metric name (optional)
     value: "checkout_p99 - cart_p99"   # reduce the inputs (optional)
+    max_groups: 10000                  # cap open aligned groups; sheds beyond it (optional)
 ```
 
 ## Alignment
@@ -59,6 +60,10 @@ join:      [0,5s): hi=214, lo=190 -> emit    [5s,10s): hi=250, lo=210 -> emit
 The alignment key is also the backend partition key, so every input's records for a given key
 land on the same worker: the join's buffered state stays local, with nothing moved between
 workers (ADR-0007, ADR-0012).
+
+`max_groups` caps the distinct aligned groups (open buckets) the join buffers; new groups past
+the cap are dropped and metered as [`headrace.records.capped`](/reference/metrics), bounding
+memory under a high-cardinality key. Off by default.
 
 ## Validation
 
