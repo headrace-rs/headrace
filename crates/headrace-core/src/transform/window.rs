@@ -8,7 +8,7 @@ use crate::backend::{Consumer, Producer};
 use crate::inspect::{GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish, recv_query};
 use crate::metrics::{DropReason, NodeMetrics};
 use crate::record::{AttrValue, Attrs, Fault, Record};
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use headrace_ir::{Aggregate, AggregateOp, FaultAction};
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
@@ -396,17 +396,19 @@ pub(super) async fn run(
         name,
         max_groups,
     } = spec;
-    let size = humantime::parse_duration(&size)?;
+    // `validate` already checked these parse; re-parse defensively so `run` stands alone,
+    // but tag the failure with which setting it was rather than degrading to a bare error.
+    let size = parse_setting("size", &size)?;
     let slide = match &slide {
-        Some(s) => humantime::parse_duration(s)?,
+        Some(s) => parse_setting("slide", s)?,
         None => size, // tumbling
     };
     let lateness = match &allowed_lateness {
-        Some(l) => humantime::parse_duration(l)?,
+        Some(l) => parse_setting("allowed_lateness", l)?,
         None => Duration::ZERO,
     };
     let idle = match &idle_timeout {
-        Some(t) => Some(humantime::parse_duration(t)?),
+        Some(t) => Some(parse_setting("idle_timeout", t)?),
         None => None,
     };
     let mut win = Window::from(WindowConfig {
@@ -451,6 +453,11 @@ pub(super) async fn run(
     meter_drops(&mut win, &nm);
     emit(win.drain_all(), tx.as_ref(), &nm).await;
     Ok(())
+}
+
+/// Parse a `humantime` window setting, tagging the failure with which setting it was.
+fn parse_setting(what: &str, value: &str) -> Result<Duration> {
+    humantime::parse_duration(value).with_context(|| format!("window: invalid {what} `{value}`"))
 }
 
 /// Sleep for `d`, or - when no idle timeout is configured - never complete, so the
