@@ -275,6 +275,13 @@ impl Nats {
         })
     }
 
+    /// Begin draining: consumers treat an idle durable stream as end-of-input and return `None`
+    /// so nodes flush and exit (see [`DRAIN_IDLE`]). A shutdown signal calls this internally;
+    /// it is also a programmatic graceful-stop hook (and how tests drive the drain path).
+    pub fn begin_drain(&self) {
+        self.draining.store(true, Ordering::Relaxed);
+    }
+
     /// Claim this worker's index in the pipeline's ownership bucket, failing fast if another
     /// worker already holds it (ADR-0016). The returned guard renews the lease until dropped;
     /// dropping it releases the index. Every worker claims, including a lone `--workers 1`, so

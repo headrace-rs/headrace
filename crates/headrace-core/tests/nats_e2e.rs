@@ -154,6 +154,28 @@ async fn a_duplicate_worker_index_is_rejected() {
         .expect("a different index claims");
 }
 
+#[tokio::test]
+#[ignore = "needs Docker; run in the Integration CI job with -- --ignored"]
+async fn a_consumer_drains_to_close_on_shutdown() {
+    let (_container, url) = start_nats().await;
+    let mut be = connect(&url, "drain", part(1, 1, 0)).await;
+    let producer = be.producer("w", &KeySpec::Unkeyed);
+    let mut consumer = be.consumer("w");
+
+    producer.send(rec("checkout", 1)).await.expect("publish");
+    assert_eq!(consumer.recv().await.expect("first record").value, 1.0);
+
+    // A durable JetStream never ends on its own, so a node would block forever on shutdown.
+    // After begin_drain, an idle stream must be treated as end-of-input and return `None` (F2)
+    // so the node can flush and exit without a second signal.
+    be.begin_drain();
+    let closed = tokio::time::timeout(Duration::from_secs(6), consumer.recv()).await;
+    assert!(
+        matches!(closed, Ok(None)),
+        "the consumer returns None after drain, got {closed:?}"
+    );
+}
+
 /// Retry connect so a slightly-early readiness signal does not flake the test.
 async fn connect(url: &str, pipeline: &str, part: PartitionConfig) -> Nats {
     for _ in 0..30 {
