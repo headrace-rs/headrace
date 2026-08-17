@@ -115,7 +115,7 @@ pub(super) async fn run(
 
             if bucket.filled == n {
                 let bucket = buckets.remove(&key).expect("bucket just updated");
-                match emit(&out_name, &inputs, expr.as_ref(), bucket)? {
+                match emit(&out_name, &inputs, expr.as_ref(), bucket) {
                     Some(record) => {
                         if tx.send(record).await.is_err() {
                             return Ok(());
@@ -176,12 +176,7 @@ fn snapshot(buckets: &HashMap<Vec<u8>, Bucket>, inputs: &[String]) -> NodeSnapsh
 /// the per-input values (exposed as attributes by id) and emit a clean record (labels
 /// only); without one, carry the per-input values as attributes. `None` if the expression
 /// could not be evaluated.
-fn emit(
-    name: &str,
-    inputs: &[String],
-    expr: Option<&Expr>,
-    bucket: Bucket,
-) -> Result<Option<Record>> {
+fn emit(name: &str, inputs: &[String], expr: Option<&Expr>, bucket: Bucket) -> Option<Record> {
     let value = match expr {
         Some(expr) => {
             let mut probe = bucket.labels.clone();
@@ -189,7 +184,7 @@ fn emit(
             let record = record(name, bucket.start, bucket.end, 0.0, probe);
             match expr.eval(&record) {
                 Ok(v) if v.is_finite() => v,
-                _ => return Ok(None),
+                _ => return None,
             }
         }
         None => 0.0,
@@ -198,7 +193,7 @@ fn emit(
     if expr.is_none() {
         carry_inputs(&mut attrs, inputs, &bucket.values);
     }
-    Ok(Some(record(name, bucket.start, bucket.end, value, attrs)))
+    Some(record(name, bucket.start, bucket.end, value, attrs))
 }
 
 /// Add each input's value to `attrs` under the input's node id.
