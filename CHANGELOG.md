@@ -1,3 +1,14 @@
+## 0.1.18 (2026-08-17)
+
+### Features
+
+- cap stateful group cardinality
+
+### Fixes
+
+- drain durable consumers on shutdown
+- key join and OTLP state by typed bytes
+
 ## 0.1.17 (2026-08-16)
 
 ### Features
