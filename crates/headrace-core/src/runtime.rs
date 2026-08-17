@@ -338,7 +338,7 @@ pub async fn run(
 
     // The State server runs alongside the pipeline.
     #[cfg(feature = "inspect")]
-    let inspect_server = start_inspect(opts, registry);
+    let inspect_server = start_inspect(&opts, registry);
 
     tracing::info!(
         sources = p.sources.len(),
@@ -415,7 +415,7 @@ fn is_inspectable(o: &Transform) -> bool {
 /// inspect. Returns a guard that stops the server when dropped.
 #[cfg(feature = "inspect")]
 fn start_inspect(
-    opts: RunOptions,
+    opts: &RunOptions,
     registry: crate::inspect::Registry,
 ) -> Option<crate::inspect::server::Server> {
     match opts.inspect_addr {

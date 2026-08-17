@@ -233,9 +233,10 @@ fn init_tracing(filter: &str, format: LogFormat) -> tracing_appender::non_blocki
     guard
 }
 
-fn load(file: &PathBuf) -> Result<Pipeline> {
-    let text = std::fs::read_to_string(file).with_context(|| format!("reading {file:?}"))?;
-    serde_norway::from_str(&text).with_context(|| format!("parsing {file:?}"))
+fn load(file: &Path) -> Result<Pipeline> {
+    let text =
+        std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+    serde_norway::from_str(&text).with_context(|| format!("parsing {}", file.display()))
 }
 
 /// NATS backend options from the CLI, used only with `--backend nats`.

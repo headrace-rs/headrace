@@ -120,7 +120,8 @@ impl Metrics for OtelMetrics {
 }
 
 /// One node's recorder: attribute set computed once here, instruments cloned (cheap,
-/// `Arc`-backed). The hot-path methods below allocate nothing.
+/// `Arc`-backed). The per-record `record_out`/`window_flushed` paths allocate nothing;
+/// `record_dropped` clones the two base labels to append a `reason`.
 struct OtelNodeRecorder {
     attrs: [KeyValue; 2], // [node, kind]
     records_out: Counter<u64>,

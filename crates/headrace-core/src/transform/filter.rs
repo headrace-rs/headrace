@@ -7,9 +7,9 @@ use crate::record::Record;
 use anyhow::Result;
 
 /// Keep predicate, extracted so it can be tested without a channel.
-fn keep(rec: &Record, key: &str, equals: &Option<String>) -> bool {
+fn keep(rec: &Record, key: &str, equals: Option<&str>) -> bool {
     match (rec.lookup(key), equals) {
-        (Some(v), Some(want)) => v.to_string() == *want,
+        (Some(v), Some(want)) => v.to_string() == want,
         (Some(_), None) => true,
         (None, _) => false,
     }
@@ -24,7 +24,7 @@ pub(super) async fn run(
     nm: NodeMetrics,
 ) -> Result<()> {
     while let Some(rec) = rx.recv().await {
-        if keep(&rec, &key, &equals) {
+        if keep(&rec, &key, equals.as_deref()) {
             nm.out();
             if tx.send(rec).await.is_err() {
                 break;
@@ -48,16 +48,16 @@ mod tests {
             1.0,
             &[("service.name", AttrValue::Str("checkout".into()))],
         );
-        assert!(keep(&r, "service.name", &None)); // key exists
-        assert!(keep(&r, "service.name", &Some("checkout".into()))); // equals
-        assert!(!keep(&r, "service.name", &Some("cart".into()))); // differs
-        assert!(!keep(&r, "missing", &None)); // absent key
+        assert!(keep(&r, "service.name", None)); // key exists
+        assert!(keep(&r, "service.name", Some("checkout"))); // equals
+        assert!(!keep(&r, "service.name", Some("cart"))); // differs
+        assert!(!keep(&r, "missing", None)); // absent key
     }
 
     #[test]
     fn keep_equals_is_stringwise_across_types() {
         let r = rec("m", 1.0, &[("http.status", AttrValue::Int(200))]);
-        assert!(keep(&r, "http.status", &Some("200".into())));
+        assert!(keep(&r, "http.status", Some("200")));
     }
 
     fn rec(name: &str, value: f64, attrs: &[(&str, AttrValue)]) -> Record {
