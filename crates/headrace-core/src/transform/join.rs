@@ -72,7 +72,7 @@ pub(super) async fn run(
     }
     drop(merged_tx);
 
-    let mut buckets: HashMap<String, Bucket> = HashMap::new();
+    let mut buckets: HashMap<Vec<u8>, Bucket> = HashMap::new();
     let mut max_end = vec![0u64; n];
 
     loop {
@@ -130,7 +130,7 @@ pub(super) async fn run(
 
         // Evict incomplete buckets every input has now advanced past.
         let watermark = max_end.iter().copied().min().unwrap_or(0);
-        let stale: Vec<String> = buckets
+        let stale: Vec<Vec<u8>> = buckets
             .iter()
             .filter(|(_, b)| b.end <= watermark)
             .map(|(k, _)| k.clone())
@@ -148,7 +148,7 @@ pub(super) async fn run(
 /// A read-only view of the open (incomplete, not-yet-fired) buckets, for state inspection
 /// (ADR-0014). Each reports the per-input values filled so far; a join bucket has no single
 /// `value` until it completes and fires, and `samples` is how many of its inputs have arrived.
-fn snapshot(buckets: &HashMap<String, Bucket>, inputs: &[String]) -> NodeSnapshot {
+fn snapshot(buckets: &HashMap<Vec<u8>, Bucket>, inputs: &[String]) -> NodeSnapshot {
     let mut groups = Vec::new();
     for b in buckets.values() {
         let mut filled = BTreeMap::new();
@@ -220,12 +220,18 @@ fn record(name: &str, start: u64, end: u64, value: f64, attrs: Attrs) -> Record 
     }
 }
 
-/// A stable key for an aligned bucket: window bounds plus the sorted labels.
-fn bucket_key(start: u64, end: u64, labels: &Attrs) -> String {
-    use std::fmt::Write;
-    let mut k = format!("{start}\u{1f}{end}");
+/// A stable key for an aligned bucket: window bounds plus the labels. Typed and
+/// length-prefixed (not a formatted string), so two labels that stringify alike but differ
+/// in type - `Int(1)` vs `Str("1")` - never collapse into one bucket. `labels` is a
+/// `BTreeMap`, so iteration order is stable across records.
+fn bucket_key(start: u64, end: u64, labels: &Attrs) -> Vec<u8> {
+    let mut k = Vec::new();
+    k.extend_from_slice(&start.to_le_bytes());
+    k.extend_from_slice(&end.to_le_bytes());
     for (name, v) in labels {
-        let _ = write!(k, "\u{1f}{name}={v}");
+        k.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        k.extend_from_slice(name.as_bytes());
+        v.write_key_bytes(&mut k);
     }
     k
 }
@@ -237,6 +243,24 @@ mod tests {
     use crate::metrics::{NodeKind, NodeMetrics};
     use crate::{NoopMetrics, SharedMetrics};
     use std::sync::Arc;
+
+    #[test]
+    fn bucket_key_is_typed_and_stable() {
+        let label = |v: AttrValue| {
+            let mut a = Attrs::new();
+            a.insert("code".into(), v);
+            a
+        };
+        let int = label(AttrValue::Int(1));
+        let string = label(AttrValue::Str("1".into()));
+        // Same label name, values that stringify alike but differ in type: distinct buckets,
+        // so two inputs disagreeing on a label's type never align into one.
+        assert_ne!(bucket_key(0, 60, &int), bucket_key(0, 60, &string));
+        // Identical (start, end, labels) is a stable, equal key.
+        assert_eq!(bucket_key(0, 60, &int), bucket_key(0, 60, &int));
+        // A different window is a different bucket.
+        assert_ne!(bucket_key(0, 60, &int), bucket_key(60, 120, &int));
+    }
 
     #[tokio::test]
     async fn reduces_aligned_inputs() {

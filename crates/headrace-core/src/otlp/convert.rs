@@ -35,14 +35,14 @@ pub fn decode(req: ExportMetricsServiceRequest, norm: &mut Normalizer) -> Vec<Re
 fn decode_scope(sm: ScopeMetrics, resource: &Attrs, norm: &mut Normalizer, out: &mut Vec<Record>) {
     let scope = sm.scope.map(|s| s.name);
     for m in sm.metrics {
-        decode_metric(m, resource, &scope, norm, out);
+        decode_metric(m, resource, scope.as_deref(), norm, out);
     }
 }
 
 fn decode_metric(
     m: Metric,
     resource: &Attrs,
-    scope: &Option<String>,
+    scope: Option<&str>,
     norm: &mut Normalizer,
     out: &mut Vec<Record>,
 ) {
@@ -78,7 +78,7 @@ fn decode_metric(
             ts_nanos: p.time_unix_nano,
             start_ts_nanos: (p.start_time_unix_nano != 0).then_some(p.start_time_unix_nano),
             resource: resource.clone(),
-            scope: scope.clone(),
+            scope: scope.map(str::to_string),
             name: name.clone(),
             value,
             attrs,
@@ -86,16 +86,26 @@ fn decode_metric(
     }
 }
 
-/// A stable identity for a metric series (resource + scope + name + datapoint attrs),
-/// used to key the per-series state that cumulative-to-delta conversion needs.
-fn series_key(resource: &Attrs, scope: &Option<String>, name: &str, attrs: &Attrs) -> String {
-    use std::fmt::Write;
-    let mut k = format!("{name}\u{1f}{}", scope.as_deref().unwrap_or(""));
-    for (key, val) in resource {
-        let _ = write!(k, "\u{1f}r:{key}={val}");
+/// A stable identity for a metric series (resource + scope + name + datapoint attrs), used
+/// to key the per-series state that cumulative-to-delta conversion needs. Typed and
+/// length-prefixed rather than a formatted string, so an attribute that stringifies alike
+/// but differs in type (`Int(200)` vs `Str("200")`) can't merge two distinct series and
+/// corrupt their deltas. Resource and datapoint attributes are tagged apart (`r`/`a`) so a
+/// label can't migrate between the two and land on the same key.
+fn series_key(resource: &Attrs, scope: Option<&str>, name: &str, attrs: &Attrs) -> Vec<u8> {
+    fn push_str(k: &mut Vec<u8>, s: &str) {
+        k.extend_from_slice(&(s.len() as u64).to_le_bytes());
+        k.extend_from_slice(s.as_bytes());
     }
-    for (key, val) in attrs {
-        let _ = write!(k, "\u{1f}a:{key}={val}");
+    let mut k = Vec::new();
+    push_str(&mut k, name);
+    push_str(&mut k, scope.unwrap_or(""));
+    for (section, map) in [(b'r', resource), (b'a', attrs)] {
+        k.push(section);
+        for (key, val) in map {
+            push_str(&mut k, key);
+            val.write_key_bytes(&mut k);
+        }
     }
     k
 }
@@ -210,6 +220,35 @@ mod tests {
         assert_eq!(
             back[0].attrs.get("service.name"),
             Some(&AttrValue::Str("checkout".into()))
+        );
+    }
+
+    #[test]
+    fn series_of_different_attr_types_do_not_collide() {
+        // An attr that stringifies alike but differs in type must key a distinct series, or
+        // cumulative->delta baselines would merge and corrupt the deltas.
+        let attr = |v: AttrValue| {
+            let mut a = Attrs::new();
+            a.insert("code".into(), v);
+            a
+        };
+        let int = attr(AttrValue::Int(200));
+        let string = attr(AttrValue::Str("200".into()));
+        let empty = Attrs::new();
+        assert_ne!(
+            series_key(&empty, None, "m", &int),
+            series_key(&empty, None, "m", &string),
+        );
+        // Same inputs -> same key.
+        assert_eq!(
+            series_key(&empty, None, "m", &int),
+            series_key(&empty, None, "m", &int),
+        );
+        // A resource attr and a datapoint attr of the same name/value stay distinct (the
+        // r/a section tags keep a label from migrating between the two onto one key).
+        assert_ne!(
+            series_key(&int, None, "m", &empty),
+            series_key(&empty, None, "m", &int),
         );
     }
 

@@ -34,6 +34,33 @@ impl AttrValue {
             _ => None,
         }
     }
+
+    /// Append a canonical, type-tagged byte encoding of this value to `buf`, for building
+    /// composite keys. Types stay distinct (`Int(1)` never encodes like `Str("1")`) and
+    /// strings are length-prefixed, so concatenated fields can't run together. This is the
+    /// same discipline the window group key ([`KeyPart`]) and NATS partition key use, so a
+    /// key can never merge two genuinely different series.
+    pub(crate) fn write_key_bytes(&self, buf: &mut Vec<u8>) {
+        match self {
+            AttrValue::Bool(b) => {
+                buf.push(1);
+                buf.push(u8::from(*b));
+            }
+            AttrValue::Int(i) => {
+                buf.push(2);
+                buf.extend_from_slice(&i.to_le_bytes());
+            }
+            AttrValue::Double(d) => {
+                buf.push(3);
+                buf.extend_from_slice(&d.to_bits().to_le_bytes());
+            }
+            AttrValue::Str(s) => {
+                buf.push(4);
+                buf.extend_from_slice(&(s.len() as u64).to_le_bytes());
+                buf.extend_from_slice(s.as_bytes());
+            }
+        }
+    }
 }
 
 /// The unit in flight. OTel data model, flattened to what the nodes need.
