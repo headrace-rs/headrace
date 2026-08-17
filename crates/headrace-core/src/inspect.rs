@@ -81,11 +81,31 @@ pub(crate) async fn recv_query(inspect: &mut Option<Inspect>) -> Option<Query> {
 
 /// Push a fresh snapshot to any `Watch` subscribers. The snapshot is built only when someone
 /// is watching, so an unwatched node pays nothing.
-pub(crate) fn publish(inspect: &Option<Inspect>, snapshot: impl FnOnce() -> NodeSnapshot) {
+pub(crate) fn publish(inspect: Option<&Inspect>, snapshot: impl FnOnce() -> NodeSnapshot) {
     if let Some(i) = inspect
         && i.events.receiver_count() > 0
     {
         let _ = i.events.send(snapshot());
+    }
+}
+
+/// Smallest gap between `Watch` snapshots from one node. A node under `Watch` would
+/// otherwise rebuild its entire open state on every record; coalescing to this interval
+/// keeps the cost bounded while still tracking state closely enough for an operator.
+const SNAPSHOT_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Like [`publish`], but at most once per [`SNAPSHOT_MIN_INTERVAL`]. `last` holds the node's
+/// previous publish time (`None` until the first), updated in place; the first call always
+/// publishes. Building the (potentially large) snapshot is skipped when throttled or unwatched.
+pub(crate) fn publish_throttled(
+    inspect: Option<&Inspect>,
+    last: &mut Option<tokio::time::Instant>,
+    snapshot: impl FnOnce() -> NodeSnapshot,
+) {
+    let now = tokio::time::Instant::now();
+    if last.is_none_or(|t| now.duration_since(t) >= SNAPSHOT_MIN_INTERVAL) {
+        *last = Some(now);
+        publish(inspect, snapshot);
     }
 }
 

@@ -5,7 +5,9 @@
 //! that owns only I/O.
 
 use crate::backend::{Consumer, Producer};
-use crate::inspect::{GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish, recv_query};
+use crate::inspect::{
+    GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish_throttled, recv_query,
+};
 use crate::metrics::{DropReason, NodeMetrics};
 use crate::record::{AttrValue, Attrs, Fault, Record};
 use anyhow::{Context, Result, bail};
@@ -421,6 +423,9 @@ pub(super) async fn run(
         max_groups,
     });
 
+    // Last time we pushed a `Watch` snapshot, to coalesce publishes (see `publish_throttled`).
+    let mut last_pub = None;
+
     loop {
         tokio::select! {
             maybe = rx.recv() => match maybe {
@@ -430,7 +435,7 @@ pub(super) async fn run(
                     if !emit(win.drain_ready(), tx.as_ref(), &nm).await {
                         return Ok(());
                     }
-                    publish(&inspect, || win.snapshot());
+                    publish_throttled(inspect.as_ref(), &mut last_pub, || win.snapshot());
                 }
                 None => break,
             },
@@ -439,7 +444,7 @@ pub(super) async fn run(
                 if !emit(win.drain_all(), tx.as_ref(), &nm).await {
                     return Ok(());
                 }
-                publish(&inspect, || win.snapshot());
+                publish_throttled(inspect.as_ref(), &mut last_pub, || win.snapshot());
             }
             // Fires only when inspection is on; answers a snapshot query from the node's
             // own loop, so the reply is consistent with the folds above.

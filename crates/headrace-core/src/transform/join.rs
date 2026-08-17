@@ -11,7 +11,9 @@
 
 use super::expr::Expr;
 use crate::backend::{Consumer, Producer};
-use crate::inspect::{GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish, recv_query};
+use crate::inspect::{
+    GroupSnapshot, Inspect, NodeSnapshot, labels_of, publish_throttled, recv_query,
+};
 use crate::metrics::{DropReason, NodeMetrics};
 use crate::record::{AttrValue, Attrs, Record};
 use anyhow::{Result, anyhow};
@@ -74,6 +76,8 @@ pub(super) async fn run(
 
     let mut buckets: HashMap<Vec<u8>, Bucket> = HashMap::new();
     let mut max_end = vec![0u64; n];
+    // Last time we pushed a `Watch` snapshot, to coalesce publishes (see `publish_throttled`).
+    let mut last_pub = None;
 
     loop {
         let (i, rec) = tokio::select! {
@@ -140,7 +144,9 @@ pub(super) async fn run(
             nm.dropped(1, DropReason::Incomplete);
         }
 
-        publish(&inspect, || snapshot(&buckets, &inputs));
+        publish_throttled(inspect.as_ref(), &mut last_pub, || {
+            snapshot(&buckets, &inputs)
+        });
     }
     Ok(())
 }
