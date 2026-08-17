@@ -19,7 +19,8 @@ use async_nats::jetstream::{self, consumer::pull, kv, stream};
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use tokio_stream::{StreamExt, StreamMap};
 
@@ -181,6 +182,14 @@ fn route(key: &KeySpec, rec: &Record, partitions: u32, rr: &AtomicU32) -> u32 {
     }
 }
 
+/// Once a shutdown signal has arrived, a consumer treats a stream that stays quiet for this
+/// long as end-of-input and returns `None`, so the node can flush and exit. A durable
+/// JetStream never "closes" on its own, so without this a node would block forever on drain
+/// (the in-process backend drains cleanly because dropped senders close its channels). This
+/// is best-effort: any records that arrive after a node has drained stay durably queued and
+/// are delivered on the next run (at-least-once, ADR-0015).
+const DRAIN_IDLE: Duration = Duration::from_secs(2);
+
 /// Exponential backoff for a retry loop, capped at 5s: 100ms, 200ms, 400ms, ... 5s, 5s.
 fn backoff(attempt: u32) -> Duration {
     let ms = 100u64.saturating_mul(1u64 << attempt.min(6));
@@ -208,6 +217,9 @@ pub struct Nats {
     js: jetstream::Context,
     pipeline: String,
     part: PartitionConfig,
+    /// Flipped by a shutdown signal so consumers switch to idle-drain (see [`DRAIN_IDLE`]).
+    /// Shared with every consumer this backend hands out.
+    draining: Arc<AtomicBool>,
 }
 
 impl Nats {
@@ -244,10 +256,22 @@ impl Nats {
                 attempt += 1;
             }
         }
+        // Flip `draining` on the first shutdown signal so consumers stop blocking on their
+        // durable streams and drain to a close (the pipeline still drives its own shutdown;
+        // this only teaches the never-closing NATS consumers to observe it).
+        let draining = Arc::new(AtomicBool::new(false));
+        tokio::spawn({
+            let draining = draining.clone();
+            async move {
+                crate::runtime::shutdown_signal().await;
+                draining.store(true, Ordering::Relaxed);
+            }
+        });
         Ok(Self {
             js,
             pipeline: pipeline.to_string(),
             part,
+            draining,
         })
     }
 
@@ -335,6 +359,7 @@ impl Backend for Nats {
             partitions: self.part.owned(),
             streams: None,
             last: None,
+            draining: self.draining.clone(),
         })
     }
 }
@@ -385,7 +410,7 @@ struct NatsProducer {
 impl NatsProducer {
     /// One publish attempt: enqueue and await the JetStream ack (record durably stored).
     /// Takes the encoded payload by value as `Bytes` so a retry re-sends the same buffer
-    /// with only a cheap refcount bump, not a re-copy per attempt.
+    /// with only a cheap refcount bump - no re-copy per attempt.
     async fn publish(&self, subject: &str, payload: Bytes) -> Result<()> {
         self.js
             .publish(subject.to_string(), payload)
@@ -438,6 +463,9 @@ struct NatsConsumer {
     /// (ack-after-processing; ADR-0015). Acking is per-message, so tracking one is correct
     /// no matter which partition it came from.
     last: Option<jetstream::Message>,
+    /// Shared shutdown flag; once set, an idle stream is treated as end-of-input so the
+    /// node can drain and exit (see [`DRAIN_IDLE`]).
+    draining: Arc<AtomicBool>,
 }
 
 impl NatsConsumer {
@@ -472,12 +500,16 @@ impl Consumer for NatsConsumer {
     async fn recv(&mut self) -> Option<Record> {
         let mut attempt = 0;
         loop {
+            let draining = self.draining.load(Ordering::Relaxed);
             if self.streams.is_none() {
                 match self.bind().await {
                     Ok(m) => {
                         self.streams = Some(m);
                         attempt = 0;
                     }
+                    // While draining, a bind we can't complete means there's nothing left to
+                    // hand the node, so close rather than retry forever.
+                    Err(_) if draining => return None,
                     Err(e) => {
                         tracing::warn!(stream = %self.stream, error = %e, "binding NATS consumer failed; retrying");
                         tokio::time::sleep(backoff(attempt)).await;
@@ -490,7 +522,18 @@ impl Consumer for NatsConsumer {
             if let Some(prev) = self.last.take() {
                 let _ = prev.ack().await;
             }
-            match self.streams.as_mut().expect("just bound").next().await {
+            let streams = self.streams.as_mut().expect("just bound");
+            // A durable stream never ends on its own, so once shutting down, treat a quiet
+            // stream as drained and return `None` to let the node flush and exit.
+            let next = if draining {
+                match tokio::time::timeout(DRAIN_IDLE, streams.next()).await {
+                    Ok(next) => next,
+                    Err(_) => return None,
+                }
+            } else {
+                streams.next().await
+            };
+            match next {
                 Some((_p, Ok(msg))) => match decode(&msg.payload) {
                     Ok(rec) => {
                         self.last = Some(msg);
