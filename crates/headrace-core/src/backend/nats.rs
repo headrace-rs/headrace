@@ -115,8 +115,10 @@ fn consumer_config(durable: &str, filter_subject: String) -> pull::Config {
     }
 }
 
-fn encode(rec: &Record) -> Result<Vec<u8>> {
-    rmp_serde::to_vec(rec).context("encoding record")
+fn encode(rec: &Record) -> Result<Bytes> {
+    Ok(Bytes::from(
+        rmp_serde::to_vec(rec).context("encoding record")?,
+    ))
 }
 
 fn decode(payload: &[u8]) -> Result<Record> {
@@ -382,9 +384,11 @@ struct NatsProducer {
 
 impl NatsProducer {
     /// One publish attempt: enqueue and await the JetStream ack (record durably stored).
-    async fn publish(&self, subject: &str, payload: &[u8]) -> Result<()> {
+    /// Takes the encoded payload by value as `Bytes` so a retry re-sends the same buffer
+    /// with only a cheap refcount bump, not a re-copy per attempt.
+    async fn publish(&self, subject: &str, payload: Bytes) -> Result<()> {
         self.js
-            .publish(subject.to_string(), payload.to_vec().into())
+            .publish(subject.to_string(), payload)
             .await
             .context("publishing to NATS")?
             .await
@@ -404,7 +408,7 @@ impl Producer for NatsProducer {
         // At-least-once (ADR-0015) makes a duplicate from an uncertain ack acceptable.
         let mut attempt = 0;
         loop {
-            match self.publish(&subj, &payload).await {
+            match self.publish(&subj, payload.clone()).await {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     tracing::warn!(subject = %subj, error = %e, "NATS publish failed; retrying");
@@ -685,7 +689,7 @@ mod tests {
     #[test]
     fn record_round_trips_through_messagepack() {
         let rec = svc_rec("checkout");
-        let back = decode(&encode(&rec).unwrap()).unwrap();
+        let back = decode(encode(&rec).unwrap().as_ref()).unwrap();
         assert_eq!(back.name, "latency");
         assert_eq!(
             back.attrs.get("service.name"),
