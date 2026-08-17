@@ -1,3 +1,9 @@
+## 0.1.19 (2026-08-17)
+
+### Features
+
+- retry export through an outage
+
 ## 0.1.18 (2026-08-17)
 
 ### Features
