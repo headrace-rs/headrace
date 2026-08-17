@@ -40,6 +40,30 @@ impl MetricsService for MockCollector {
     }
 }
 
+/// A collector that rejects its first `fail_first` exports with `unavailable`, then records
+/// the rest - to exercise the exporter's retry (ADR-0017).
+#[derive(Clone)]
+struct FlakyCollector {
+    seen: mpsc::UnboundedSender<ExportMetricsServiceRequest>,
+    fail_first: Arc<std::sync::atomic::AtomicU32>,
+}
+
+#[tonic::async_trait]
+impl MetricsService for FlakyCollector {
+    async fn export(
+        &self,
+        request: Request<ExportMetricsServiceRequest>,
+    ) -> Result<Response<ExportMetricsServiceResponse>, Status> {
+        use std::sync::atomic::Ordering;
+        if self.fail_first.load(Ordering::SeqCst) > 0 {
+            self.fail_first.fetch_sub(1, Ordering::SeqCst);
+            return Err(Status::unavailable("collector down"));
+        }
+        let _ = self.seen.send(request.into_inner());
+        Ok(Response::new(ExportMetricsServiceResponse::default()))
+    }
+}
+
 /// A loopback address with a free port. The bind/drop/reuse gap is a small race that is
 /// acceptable for a local test.
 fn free_addr() -> String {
@@ -168,6 +192,61 @@ async fn otlp_round_trips_through_a_window_rollup() {
     );
 
     win_task.abort();
+    sink_task.abort();
+    collector_task.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exporter_retries_a_failing_collector() {
+    // Collector is up but rejects its first two exports; the sink must retry through them
+    // and still deliver (ADR-0017).
+    let (seen_tx, mut seen_rx) = mpsc::unbounded_channel();
+    let addr = free_addr();
+    let endpoint = format!("http://{addr}");
+    let fail_first = Arc::new(std::sync::atomic::AtomicU32::new(2));
+    let collector_task = tokio::spawn(
+        Server::builder()
+            .add_service(MetricsServiceServer::new(FlakyCollector {
+                seen: seen_tx,
+                fail_first: fail_first.clone(),
+            }))
+            .serve(addr.parse().expect("parse collector addr")),
+    );
+    connect_ready(&endpoint).await;
+
+    let mut be = InProcess::new(16);
+    let feed = be.producer("w", &KeySpec::Unkeyed);
+    let sink_in = be.consumer("w");
+    drop(be);
+    let metrics: SharedMetrics = Arc::new(NoopMetrics);
+    let sink: Sink = serde_norway::from_str(&format!(
+        "type: otlp\nid: out\ninput: w\nendpoint: {endpoint}"
+    ))
+    .unwrap();
+    let sink_task = tokio::spawn(headrace_core::sink::run(
+        sink,
+        sink_in,
+        NodeMetrics::bind(&metrics, "out", NodeKind::Sink),
+    ));
+
+    feed.send(point("checkout", 42.0))
+        .await
+        .expect("feed the sink");
+
+    let got = tokio::time::timeout(Duration::from_secs(5), seen_rx.recv())
+        .await
+        .expect("collector received an export within 5s despite two failures")
+        .expect("collector channel stayed open");
+    assert_eq!(
+        fail_first.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "both induced failures were retried through"
+    );
+    let recs = decode(got, &mut Normalizer::default());
+    assert_eq!(recs.len(), 1);
+    assert_eq!(recs[0].value, 42.0);
+
+    drop(feed);
     sink_task.abort();
     collector_task.abort();
 }
