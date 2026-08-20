@@ -52,7 +52,7 @@ join:      [0,5s): hi=214, lo=190 -> emit    [5s,10s): hi=250, lo=210 -> emit
 ```yaml
 # align only, then reduce in wasm
 - { type: join, id: aligned, inputs: [a, b, c] }
-- { type: wasm, id: combine, input: aligned }   # reads a, b, c attributes (roadmap)
+- { type: wasm, id: combine, input: aligned }   # reads a, b, c attributes
 ```
 
 ## Scaling

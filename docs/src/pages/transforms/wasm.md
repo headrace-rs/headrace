@@ -1,0 +1,99 @@
+---
+title: wasm
+description: Run a sandboxed WebAssembly module as a custom per-record transform.
+showAskAi: false
+---
+
+# Wasm
+
+The `wasm` transform runs a **WebAssembly module** as a stateless, per-record transform: one
+`Record` in, zero or more out (transform, drop, or fan-out). It is the escape hatch for logic the
+fixed catalog (`filter`, `map`, `window`, `join`) can't express. Headrace hands the module each
+record as MessagePack bytes and reads the results back the same way.
+
+```yaml
+transforms:
+  - type: wasm
+    id: score
+    input: rolled_up
+    module: ./modules/score.wasm    # local path, read at startup
+    sha256: "9f86d0..."             # optional: pin the module's digest
+    max_memory: 128Mi               # optional: linear-memory cap (default 64Mi)
+    timeout: 200ms                  # optional: time budget per record (default 100ms)
+    on_error: skip                  # crash / bad output: skip | error (default skip)
+```
+
+An empty output drops the record; several fan it out. The module is loaded and compiled once when
+the node starts, so a missing file or a `sha256` mismatch fails the pipeline immediately.
+
+## Authoring in Rust
+
+The `headrace-wasm-guest` crate turns an `fn(Record) -> Vec<Record>` into a module. Annotate your
+function with `#[transform]` and build a `cdylib` for `wasm32-unknown-unknown`:
+
+```rust
+use headrace_wasm_guest::{transform, Record};
+
+#[transform]
+fn double(mut rec: Record) -> Vec<Record> {
+    rec.value *= 2.0;
+    vec![rec]
+}
+```
+
+```sh
+cargo build --release --target wasm32-unknown-unknown
+# point `module:` at target/wasm32-unknown-unknown/release/<crate>.wasm
+```
+
+Your function receives an **owned** `Record`, so it is free to modify it, drop it (return an empty
+`Vec`), or emit several. It is ordinary safe Rust - the unsafe code that moves bytes across the
+boundary lives in the SDK, not in your module. The
+[`examples/wasm`](https://github.com/headrace-rs/headrace/tree/main/examples/wasm) crate is a
+complete, buildable module.
+
+## Other languages
+
+The boundary is a language-neutral **bytes ABI**, so any language that compiles to core wasm and
+can read and write MessagePack can author a module - Go (via TinyGo), C, AssemblyScript. Only Rust
+has a first-class SDK today; other languages implement the ABI by hand:
+
+- export a `memory`, plus `alloc(len) -> ptr` and `dealloc(ptr, len)` (Headrace calls `alloc` to get
+  a place to write the input into the module's memory);
+- export `transform(ptr, len) -> i64`: decode the MessagePack `Record` in `[ptr, ptr + len)`, then
+  return the output `Vec<Record>` encoded as MessagePack, packing its `(ptr, len)` into the result
+  (`ptr << 32 | len`);
+- export `__headrace_abi_version() -> i32` returning the ABI version the module targets (currently
+  `1`). This version bumps only on a *breaking* change to the record, so an additive change (a new
+  field) keeps the same version and older modules keep running; Headrace refuses a module only when
+  the versions genuinely differ.
+
+The contract to honor: `alloc(len)` returns a pointer to `len` writable bytes that stay valid until
+`transform` reads them, and `transform` returns a pointer to bytes that stay valid until Headrace
+reads them (do not free the output before returning). Get this wrong and the sandbox still contains
+it - a bad pointer or length is caught by wasm's bounds checks and surfaces through `on_error`, never
+as host corruption; the worst case is a dropped or malformed record.
+
+## Sourcing
+
+A module is a **local file path**, read when the node starts, with an optional `sha256` pin. There
+is no fetch from a URL or registry: mount the `.wasm` next to the pipeline config (a ConfigMap,
+volume, or image layer), the same way you provide the config itself. Running fetched code is a
+supply-chain surface, so it stays out of the transform; an OCI/registry source may come later.
+
+## Sandbox
+
+A module is pure computation with no access to the outside world:
+
+- **no host imports, no WASI** - it cannot touch the filesystem, network, clock, or environment
+  variables; all it can do is turn input records into output records;
+- **memory capped** per module instance (`max_memory`, default 64 MiB); the
+  `headrace.wasm.memory.bytes` metric reports actual usage so you can size it from real data;
+- **a time budget per record** (`timeout`, default 100 ms) - each `transform` call gets a fresh
+  budget; one that runs too long (say an accidental infinite loop) is stopped rather than hanging
+  the worker.
+
+If a module stops abnormally - it crashes (a *trap*), exceeds its time or memory budget, or returns
+output Headrace can't decode - **`on_error`** decides what happens, exactly like `map`'s
+`on_invalid`: `skip` drops that one record and counts it on `headrace.records.dropped`
+(`reason=invalid`); `error` stops the pipeline. Both default to `skip`.

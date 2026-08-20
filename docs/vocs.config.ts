@@ -58,6 +58,7 @@ button[data-single-line="true"][class]{top:.625rem!important;translate:none!impo
         { text: 'Map', link: '/transforms/map' },
         { text: 'Window', link: '/transforms/window' },
         { text: 'Join', link: '/transforms/join' },
+        { text: 'Wasm', link: '/transforms/wasm' },
       ],
     },
     { text: 'Sinks', link: '/sinks' },

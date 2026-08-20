@@ -54,7 +54,7 @@ cargo run -p headrace -- schema
 | Kind | Supported | Planned |
 |---|---|---|
 | Sources | `otlp` (gRPC receiver), `generator`, `stdin` | - |
-| Transforms | `filter`, `window` (tumbling + sliding, event-time), `map`, `join` (cross-series) | session windows, `wasm` |
+| Transforms | `filter`, `window` (tumbling + sliding, event-time), `map`, `join` (cross-series), `wasm` (sandboxed custom logic) | session windows |
 | Sinks | `otlp` (gRPC exporter), `stdout` (text / json) | Prometheus remote-write |
 | Aggregates | `count`, `sum`, `min`, `max`, `avg` | quantiles (DDSketch), `stddev`, `count_distinct` (HLL), `first`/`last`, OTel exp-histogram merge - all mergeable ([ADR-0005](./adr/0005-event-time-windows-and-mergeable-aggregates.md)) |
 | Backend | in-process (single binary), NATS JetStream (partitioned, scaled) | - |
@@ -70,7 +70,8 @@ Full docs at [headrace.rs/docs](https://headrace.rs/docs):
   ([filter](https://headrace.rs/docs/transforms/filter),
   [map](https://headrace.rs/docs/transforms/map),
   [window](https://headrace.rs/docs/transforms/window),
-  [join](https://headrace.rs/docs/transforms/join)), [sinks](https://headrace.rs/docs/sinks)
+  [join](https://headrace.rs/docs/transforms/join),
+  [wasm](https://headrace.rs/docs/transforms/wasm)), [sinks](https://headrace.rs/docs/sinks)
 - Reference: [CLI](https://headrace.rs/docs/reference/cli),
   [self-metrics](https://headrace.rs/docs/reference/metrics)
 - [Troubleshooting](https://headrace.rs/docs/troubleshooting)
@@ -91,7 +92,8 @@ watermarks and `allowed_lateness`, and a Helm chart. v0.3 adds the `map` and `jo
 transforms and local state inspection - a `State` gRPC API (`Get` and streaming `Watch`)
 served by `run --inspect-addr`, with a `headrace inspect` client. v0.4 adds the NATS
 JetStream backend: durable, partitioned edges that scale a pipeline across workers
-(`--backend nats`), with the WASM transform next.
+(`--backend nats`), plus the WASM transform - a sandboxed, per-record escape hatch for
+custom logic, authored with the `headrace-wasm-guest` SDK.
 
 Roadmap (details in [DESIGN.md](./DESIGN.md#roadmap)) - core processing first, on the
 in-process backend and deployable in a real cluster, before a distributed backend:

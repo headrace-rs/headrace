@@ -34,6 +34,7 @@ Every metric is attributed by `node` (the node id) and `kind` (`source`, `filter
 | `headrace.window.flushes` | counter | node | Window flush events. |
 | `headrace.window.groups` | histogram | node | Aggregate groups emitted per flush. |
 | `headrace.node.errors` | counter | node, kind | Node tasks that terminated with an error. |
+| `headrace.wasm.memory.bytes` | histogram | node, kind | A `wasm` module's linear-memory size, recorded when it changes. |
 
 `reason` on `headrace.records.dropped`:
 
@@ -56,3 +57,5 @@ Every metric is attributed by `node` (the node id) and `kind` (`source`, `filter
 - `records.dropped{reason=capped}` is nonzero only when a node hit its `max_groups` cap: the
   `group_by` cardinality outran the limit (a misconfigured key or an attack). Raise the cap or
   narrow the `group_by`.
+- `wasm.memory.bytes` is the linear memory a `wasm` module settled on; size its `max_memory`
+  above the peak you see here, with headroom.

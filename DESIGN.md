@@ -198,7 +198,7 @@ consumer (fan-out is a later `tee`). Full JSON Schema: `headrace schema`.
 | transform | `window` | tumbling + sliding, event-time; `group_by` + `aggregate {count,sum,min,max,avg}`; `on_missing {skip,error}`. Session windows *next* |
 | transform | `map` | rewrite `value` from a numeric expression |
 | transform | `join` | cross-series arithmetic on aligned windows |
-| transform | `wasm` | *next* |
+| transform | `wasm` | run a sandboxed WebAssembly module per record (`wasm` feature); local module path + optional `sha256` |
 | sink | `stdout` | text / json |
 | sink | `otlp` | OTLP/gRPC exporter (`otlp` feature); Prometheus remote-write *next* |
 
@@ -281,13 +281,16 @@ flowchart TD
   cli --> ir[headrace-ir]
   cli --> proto[headrace-proto]
   core --> ir
+  core --> record[headrace-record]
   core -.inspect.-> proto
 ```
 
 - `headrace-ir` - IR types + JSON Schema. No runtime deps.
-- `headrace-core` - record model, `Backend` trait (in-process default), transforms, runtime, and the `Metrics` boundary. Optional features: `otlp` (source/sink), `nats` (JetStream backend), `inspect` (state-inspection gRPC server).
+- `headrace-record` - the record data model (`Record`, `AttrValue`), shared by the engine and the wasm guest SDK so the two cannot drift; also holds the wasm `ABI_VERSION`. No runtime deps.
+- `headrace-core` - `Backend` trait (in-process default), transforms, runtime, and the `Metrics` boundary. Optional features: `otlp` (source/sink), `nats` (JetStream backend), `inspect` (state-inspection gRPC server), `wasm` (WebAssembly transform).
 - `headrace-proto` - checked-in gRPC stubs for the state-inspection API, used by the `inspect` feature and the `inspect` CLI command.
 - `headrace-proto-gen` - dev-only tool that regenerates `headrace-proto` from the `.proto`; not built at runtime.
+- `headrace-wasm-guest` / `headrace-wasm-macro` - author-facing SDK for writing a `wasm` transform in Rust (an `#[transform]` fn) and its proc-macro. Compiled to wasm32 by module authors; not linked into the binary.
 - `headrace` - CLI + the OTel self-metrics exporter (the only crate that depends on OpenTelemetry).
 
 ## Testing
@@ -387,10 +390,11 @@ Branding and logo: done.
 
 **v0.4 - scale-out and extensibility**, in sequence:
 
-1. **NATS JetStream backend** - the scaled path: partitioned subjects, durable consumers, static
-   assignment (ADR-0008). The first deployment that needs an external backend.
-2. **WASM transform** - the escape hatch for custom logic.
-3. **Docs site** (Vocs or mdBook, mermaid) on Cloudflare Pages.
+1. **NATS JetStream backend** *(done)* - the scaled path: partitioned subjects, durable consumers,
+   static assignment (ADR-0008, ADR-0015). The first deployment that needs an external backend.
+2. **WASM transform** *(done)* - the escape hatch for custom logic: a sandboxed module runs per
+   record over a MessagePack bytes ABI, authored with the `headrace-wasm-guest` SDK (ADR-0018).
+3. **Docs site** *(done)* (Vocs, mermaid) on Cloudflare Pages.
 4. **Transport security (TLS / mTLS)** - optional TLS on the OTLP receiver and the state
    inspection endpoint, and mTLS on the internal backend edge. Until then those surfaces rely
    on network placement (SECURITY.md) plus the receiver's resource caps (`max_recv_bytes`,

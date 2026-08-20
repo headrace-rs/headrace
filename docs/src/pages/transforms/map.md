@@ -45,7 +45,7 @@ Operators, highest precedence first:
 The language is deliberately **closed**: no strings, booleans, conditionals, functions, or I/O.
 That keeps it cheap to evaluate and statically checkable - `headrace validate` rejects a
 malformed expression before the pipeline runs. Functions (`min`, `sqrt`, ...) and more operators
-are planned later; arbitrary per-record logic is what the `wasm` transform (roadmap) is for.
+are planned later; arbitrary per-record logic is what the [`wasm`](/transforms/wasm) transform is for.
 
 ## Missing fields and undefined results
 

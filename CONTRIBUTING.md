@@ -50,6 +50,15 @@ Run a pipeline:
 cargo run -p headrace -- run examples/latency.yaml
 ```
 
+### wasm modules
+
+The `wasm` transform runs a WebAssembly module (see the [docs](https://headrace.rs/docs/transforms/wasm)).
+Author one in Rust with the `headrace-wasm-guest` crate. `examples/wasm` is a complete module and
+also the host test fixture; it targets `wasm32` so it is excluded from the workspace and built on
+demand. The host test loads the committed `.wasm`, so `cargo test` needs no wasm toolchain - only
+refreshing the fixture does. See [`examples/wasm/README.md`](./examples/wasm/README.md) for the
+build-and-refresh command.
+
 ### Running against NATS (scaled backend)
 
 The default backend is in-process. To use the NATS JetStream backend (ADR-0015) you need a
