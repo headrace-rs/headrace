@@ -97,3 +97,29 @@ If a module stops abnormally - it crashes (a *trap*), exceeds its time or memory
 output Headrace can't decode - **`on_error`** decides what happens, exactly like `map`'s
 `on_invalid`: `skip` drops that one record and counts it on `headrace.records.dropped`
 (`reason=invalid`); `error` stops the pipeline. Both default to `skip`.
+
+## Performance
+
+A `wasm` transform runs in **microseconds per record**, sub-millisecond even for wide records, on a
+reused instance (compiled once at startup). Representative figures for the `examples/wasm` module
+(doubles a value), on an Apple M4, single thread (`us` = microsecond):
+
+| Record (attributes) | Latency per record | Throughput, one core |
+| ------------------- | ------------------ | -------------------- |
+| 1                   | ~1.7 us            | ~600K rec/s          |
+| 10                  | ~8.9 us            | ~112K rec/s          |
+| 50                  | ~46 us             | ~22K rec/s           |
+
+Latency tracks a record's attribute count because the cost is the MessagePack round-trip: encode
+into the module, decode inside it, encode the result, decode it back out. The host-side encode alone
+is 27 ns to 0.6 us across that same range - a small fraction of each figure - so the rest is the
+guest's own decode/encode and the call boundary, not Headrace's marshalling. A zero-copy archived
+format (rkyv) could trim the round-trip but would change the guest API; the current numbers clear
+sub-millisecond by a wide margin, so it stays deferred (ADR-0018).
+
+Treat these as orders of magnitude, not guarantees: they move with hardware, module complexity, and
+record shape. Reproduce them on your own machine with:
+
+```sh
+cargo bench -p headrace-core --features wasm --bench wasm_transform
+```
