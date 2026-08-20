@@ -12,7 +12,7 @@
 //! glue (connect, publish, pull) needs a live server, covered by the `nats_e2e` test.
 
 use crate::backend::{Backend, Consumer, KeySpec, Producer};
-use crate::record::{AttrValue, Record};
+use crate::record::Record;
 use anyhow::{Context, Result, bail};
 use async_nats::ConnectOptions;
 use async_nats::jetstream::{self, consumer::pull, kv, stream};
@@ -136,23 +136,7 @@ fn key_bytes(rec: &Record, group_by: &[String]) -> Vec<u8> {
     for field in group_by {
         match rec.lookup(field) {
             None => buf.push(0),
-            Some(AttrValue::Bool(b)) => {
-                buf.push(1);
-                buf.push(*b as u8);
-            }
-            Some(AttrValue::Int(i)) => {
-                buf.push(2);
-                buf.extend_from_slice(&i.to_le_bytes());
-            }
-            Some(AttrValue::Double(d)) => {
-                buf.push(3);
-                buf.extend_from_slice(&d.to_bits().to_le_bytes());
-            }
-            Some(AttrValue::Str(s)) => {
-                buf.push(4);
-                buf.extend_from_slice(&(s.len() as u64).to_le_bytes());
-                buf.extend_from_slice(s.as_bytes());
-            }
+            Some(v) => v.write_key_bytes(&mut buf),
         }
     }
     buf
@@ -575,7 +559,7 @@ impl Consumer for NatsConsumer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record::Attrs;
+    use crate::record::{AttrValue, Attrs};
 
     #[test]
     fn names_are_derived_consistently() {

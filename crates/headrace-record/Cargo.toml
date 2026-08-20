@@ -1,0 +1,15 @@
+[package]
+name = "headrace-record"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The Headrace record data model, shared by the engine and the wasm guest SDK."
+keywords = ["opentelemetry", "observability", "streaming", "record"]
+categories = ["data-structures"]
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

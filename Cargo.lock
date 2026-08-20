@@ -1014,6 +1014,7 @@ dependencies = [
  "bytes",
  "headrace-ir",
  "headrace-proto",
+ "headrace-record",
  "humantime",
  "mockall",
  "opentelemetry-proto",
@@ -1055,6 +1056,14 @@ name = "headrace-proto-gen"
 version = "0.1.19"
 dependencies = [
  "tonic-prost-build",
+]
+
+[[package]]
+name = "headrace-record"
+version = "0.1.19"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

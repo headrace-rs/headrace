@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/headrace-ir",
+    "crates/headrace-record",
     "crates/headrace-core",
     "crates/headrace",
     "crates/headrace-proto",
@@ -16,6 +17,7 @@ repository = "https://github.com/headrace-rs/headrace"
 
 [workspace.dependencies]
 headrace-ir = { path = "crates/headrace-ir", version = "0.1.19" }
+headrace-record = { path = "crates/headrace-record", version = "0.1.19" }
 headrace-core = { path = "crates/headrace-core", version = "0.1.19" }
 headrace-proto = { path = "crates/headrace-proto", version = "0.1.19" }
 serde = { version = "1", features = ["derive"] }

@@ -29,6 +29,9 @@ enum KeyPart {
     Double(u64),
     Str(String),
     Absent,
+    /// Forward-compat: an `AttrValue` variant added after this code was written, held as its
+    /// canonical key bytes so it still can't collide with another value.
+    Other(Vec<u8>),
 }
 
 impl KeyPart {
@@ -39,6 +42,11 @@ impl KeyPart {
             Some(AttrValue::Double(d)) => KeyPart::Double(d.to_bits()),
             Some(AttrValue::Str(s)) => KeyPart::Str(s.clone()),
             None => KeyPart::Absent,
+            Some(other) => {
+                let mut bytes = Vec::new();
+                other.write_key_bytes(&mut bytes);
+                KeyPart::Other(bytes)
+            }
         }
     }
 }

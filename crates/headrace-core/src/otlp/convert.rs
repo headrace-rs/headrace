@@ -189,6 +189,8 @@ fn to_any(v: &AttrValue) -> AnyValue {
         AttrValue::Bool(b) => any_value::Value::BoolValue(*b),
         AttrValue::Int(i) => any_value::Value::IntValue(*i),
         AttrValue::Double(d) => any_value::Value::DoubleValue(*d),
+        // Forward-compat: a variant added after this code was written exports as its display text.
+        _ => any_value::Value::StringValue(v.to_string()),
     };
     AnyValue { value: Some(value) }
 }
