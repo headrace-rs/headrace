@@ -336,6 +336,39 @@ impl WasmInstance {
     }
 }
 
+/// Benchmark-only handle to the transform hot path. Not part of the public API
+/// (`#[doc(hidden)]`, semver-exempt); it lets `benches/` drive the real
+/// encode -> call -> decode path rather than a copy that could drift from it.
+#[doc(hidden)]
+pub struct Bench {
+    stop: Arc<AtomicBool>,
+    inst: WasmInstance,
+}
+
+#[doc(hidden)]
+impl Bench {
+    /// Compile `module` on a fresh engine and instantiate it, ready to transform.
+    pub fn new(module: &[u8]) -> Result<Self> {
+        let (engine, stop) = build_engine();
+        let host = WasmHost::new(&engine, module, Limits::default())?;
+        let inst = host.instantiate()?;
+        Ok(Self { stop, inst })
+    }
+
+    /// Run one record through the module and return the output record count. The instance
+    /// (and its engine) are held across calls, so this is the reused-instance steady state.
+    pub fn run(&mut self, rec: &Record) -> Result<usize> {
+        Ok(self.inst.transform(rec)?.len())
+    }
+}
+
+impl Drop for Bench {
+    fn drop(&mut self) {
+        // Stop this handle's epoch ticker, matching `WasmEngine`'s production drop.
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,6 +394,17 @@ mod tests {
             out[0].attrs.get("service.name"),
             Some(&AttrValue::Str("checkout".into()))
         );
+    }
+
+    #[test]
+    fn bench_handle_runs_the_module() {
+        // Covers the benchmark facade (Bench::new/run, drop) on the real SDK module.
+        let module = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/double.wasm"
+        ));
+        let mut b = Bench::new(module).unwrap();
+        assert_eq!(b.run(&rec("checkout", 21.0)).unwrap(), 1);
     }
 
     #[test]

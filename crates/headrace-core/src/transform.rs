@@ -14,6 +14,11 @@ mod window;
 
 pub use window::{Window, WindowConfig};
 
+// Benchmark-only, semver-exempt handle to the wasm transform hot path (see `benches/`).
+#[cfg(feature = "wasm")]
+#[doc(hidden)]
+pub use wasm::Bench as WasmBench;
+
 use crate::backend::{Consumer, Producer};
 use crate::inspect::Inspect;
 use crate::metrics::NodeMetrics;

@@ -59,3 +59,12 @@ opentelemetry-proto.workspace = true
 testcontainers = "0.28"
 # Compile inline WAT test fixtures to wasm for the wasm-transform tests.
 wat = "1"
+# Micro-benchmark the wasm transform (benches/wasm_transform.rs).
+criterion = "0.5"
+# Isolate the host-side MessagePack encode cost in the wasm benches.
+rmp-serde.workspace = true
+
+# Needs `--features wasm`; without it the bench is an empty binary (see the file).
+[[bench]]
+name = "wasm_transform"
+harness = false
