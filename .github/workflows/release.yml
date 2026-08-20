@@ -169,8 +169,19 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
+          # Skip any crate whose current version is already on crates.io so re-running
+          # this job after a partial publish (a mid-loop failure, or a new crate not yet
+          # claimed) does not error on the versions already uploaded. Trusted publishing
+          # still cannot create a crate, so a brand-new name is claimed once by a manual
+          # `cargo publish` (see the note above); this only makes re-runs idempotent.
+          version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')"
           for crate in headrace-ir headrace-record headrace-wasm-macro headrace-proto headrace-core headrace-wasm-guest headrace; do
-            echo "::group::publish $crate"
-            cargo publish -p "$crate" --locked
+            echo "::group::publish $crate v$version"
+            if curl -sf -H 'User-Agent: headrace-release (github.com/headrace-rs/headrace)' \
+                "https://crates.io/api/v1/crates/${crate}/${version}" >/dev/null; then
+              echo "$crate v$version already on crates.io; skipping"
+            else
+              cargo publish -p "$crate" --locked
+            fi
             echo "::endgroup::"
           done
