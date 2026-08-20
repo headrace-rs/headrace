@@ -151,6 +151,7 @@ async fn otlp_round_trips_through_a_window_rollup() {
         win_out,
         NodeMetrics::bind(&metrics, "w", NodeKind::Window),
         None,
+        headrace_core::transform::WasmEngine::default(),
     ));
     let sink_task = tokio::spawn(headrace_core::sink::run(
         sink,

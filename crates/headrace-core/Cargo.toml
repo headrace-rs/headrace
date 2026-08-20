@@ -33,6 +33,8 @@ tokio-stream = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 rmp-serde = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
+wasmtime = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 
 [features]
 # Exposes automock-generated Backend/Producer/Consumer mocks for downstream tests.
@@ -43,6 +45,8 @@ otlp = ["dep:tonic", "dep:opentelemetry-proto"]
 inspect = ["dep:tonic", "dep:headrace-proto", "dep:tonic-reflection", "dep:tokio-stream"]
 # NATS JetStream backend: durable, partitioned edges for the scaled deployment (ADR-0015).
 nats = ["dep:async-nats", "dep:rmp-serde", "dep:tokio-stream", "dep:bytes"]
+# WASM transform: run a user module as a stateless transform (ADR-0018).
+wasm = ["dep:wasmtime", "dep:rmp-serde", "dep:sha2"]
 
 [dev-dependencies]
 serde_norway.workspace = true
@@ -53,3 +57,5 @@ tonic.workspace = true
 opentelemetry-proto.workspace = true
 # Spin a real NATS/JetStream container for the nats_e2e test (ignored unless docker is present).
 testcontainers = "0.28"
+# Compile inline WAT test fixtures to wasm for the wasm-transform tests.
+wat = "1"

@@ -429,6 +429,7 @@ mod tests {
         }
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {}
+        fn wasm_memory(&self, _: u64) {}
     }
 
     /// Ask the join node for its current snapshot.

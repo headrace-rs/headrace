@@ -159,6 +159,7 @@ mod backend_tests {
         }
         fn window_flushed(&self, _: u64) {}
         fn node_error(&self) {}
+        fn wasm_memory(&self, _: u64) {}
     }
 
     fn svc_rec(svc: &str) -> Record {

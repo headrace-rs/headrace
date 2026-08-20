@@ -1,0 +1,14 @@
+[package]
+name = "headrace-wasm-guest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Author a Headrace wasm transform in Rust: an fn(Record) -> Vec<Record> and a macro."
+keywords = ["opentelemetry", "streaming", "wasm", "webassembly", "sdk"]
+categories = ["wasm", "development-tools"]
+
+[dependencies]
+headrace-record.workspace = true
+headrace-wasm-macro.workspace = true
+rmp-serde.workspace = true

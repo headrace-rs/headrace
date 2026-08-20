@@ -131,6 +131,31 @@ pub enum Transform {
         #[serde(default)]
         max_groups: Option<usize>,
     },
+    /// Run a WebAssembly module as a stateless transform (ADR-0018): one record in, zero or
+    /// more out. The module owns its output (including record names), so there is no `name`
+    /// override here. The ABI and authoring SDK are in the wasm docs.
+    Wasm {
+        id: String,
+        input: String,
+        /// Path to the `.wasm` module on disk.
+        module: String,
+        /// Optional SHA-256 (hex) of the module, verified when it is loaded.
+        #[serde(default)]
+        sha256: Option<String>,
+        /// Cap on the module's linear memory, e.g. `64Mi`, `256Mi`, `1Gi` (binary units) or a
+        /// plain byte count. Defaults to 64Mi.
+        #[serde(default)]
+        max_memory: Option<String>,
+        /// How long the module may run on a single record before that call is stopped (it traps,
+        /// then `on_error` applies), e.g. `100ms`, `1s`. Applied per record, not overall.
+        /// Defaults to 100ms.
+        #[serde(default)]
+        timeout: Option<String>,
+        /// What to do when the module traps, exceeds a resource limit, or returns output that
+        /// does not decode: `skip` drops the record (metered), `error` fails the node.
+        #[serde(default)]
+        on_error: FaultAction,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -209,7 +234,8 @@ impl Transform {
             Transform::Filter { id, .. }
             | Transform::Window { id, .. }
             | Transform::Map { id, .. }
-            | Transform::Join { id, .. } => id,
+            | Transform::Join { id, .. }
+            | Transform::Wasm { id, .. } => id,
         }
     }
     /// The upstream node ids this transform reads. One for every transform except
@@ -218,7 +244,8 @@ impl Transform {
         match self {
             Transform::Filter { input, .. }
             | Transform::Window { input, .. }
-            | Transform::Map { input, .. } => vec![input],
+            | Transform::Map { input, .. }
+            | Transform::Wasm { input, .. } => vec![input],
             Transform::Join { inputs, .. } => inputs.iter().map(String::as_str).collect(),
         }
     }

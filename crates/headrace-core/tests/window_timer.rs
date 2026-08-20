@@ -33,6 +33,7 @@ async fn window_fires_on_the_event_time_watermark() {
         win_tx,
         nm,
         None,
+        headrace_core::transform::WasmEngine::default(),
     ));
 
     let five_s = Duration::from_secs(5).as_nanos() as u64;
@@ -84,6 +85,7 @@ async fn idle_timeout_collapses_an_open_window() {
         win_tx,
         nm,
         None,
+        headrace_core::transform::WasmEngine::default(),
     ));
 
     // Two records land in one open window (watermark stays far below its end).

@@ -39,6 +39,7 @@ async fn window_then_join_reduces_two_series() {
         hi_tx,
         NodeMetrics::bind(&m, "hi", NodeKind::Window),
         None,
+        headrace_core::transform::WasmEngine::default(),
     ));
     tokio::spawn(headrace_core::transform::run(
         lo,
@@ -46,6 +47,7 @@ async fn window_then_join_reduces_two_series() {
         lo_tx,
         NodeMetrics::bind(&m, "lo", NodeKind::Window),
         None,
+        headrace_core::transform::WasmEngine::default(),
     ));
     tokio::spawn(headrace_core::transform::run(
         j,
@@ -53,6 +55,7 @@ async fn window_then_join_reduces_two_series() {
         join_tx,
         NodeMetrics::bind(&m, "j", NodeKind::Join),
         None,
+        headrace_core::transform::WasmEngine::default(),
     ));
 
     let five_s = Duration::from_secs(5).as_nanos() as u64;

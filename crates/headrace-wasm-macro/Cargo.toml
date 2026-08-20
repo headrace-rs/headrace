@@ -1,0 +1,14 @@
+[package]
+name = "headrace-wasm-macro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The #[transform] attribute macro for headrace-wasm-guest."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote.workspace = true
+syn.workspace = true

@@ -1,4 +1,7 @@
 /target
+# The excluded wasm example builds standalone (see examples/wasm/README.md).
+/examples/wasm/target
+/examples/wasm/Cargo.lock
 Cargo.lock.bak
 *.swp
 

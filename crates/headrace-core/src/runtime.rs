@@ -212,6 +212,25 @@ fn node_ids(p: &Pipeline) -> impl Iterator<Item = &str> {
         .chain(p.sinks.iter().map(|s| s.id()))
 }
 
+/// Build the shared wasm engine when the pipeline has a wasm node, otherwise an empty handle
+/// (so a pipeline with no wasm nodes starts no engine or ticker).
+#[cfg(feature = "wasm")]
+fn build_wasm_engine(p: &Pipeline) -> crate::transform::WasmEngine {
+    if p.transforms
+        .iter()
+        .any(|t| matches!(t, Transform::Wasm { .. }))
+    {
+        crate::transform::WasmEngine::new()
+    } else {
+        crate::transform::WasmEngine::default()
+    }
+}
+
+#[cfg(not(feature = "wasm"))]
+fn build_wasm_engine(_p: &Pipeline) -> crate::transform::WasmEngine {
+    crate::transform::WasmEngine::default()
+}
+
 fn parse_duration(node: &str, value: &str) -> Result<Duration, ValidationError> {
     humantime::parse_duration(value).map_err(|source| ValidationError::BadDuration {
         node: node.to_string(),
@@ -284,6 +303,9 @@ pub async fn run(
     #[cfg(not(feature = "inspect"))]
     let _ = opts; // no side surfaces compiled in
     validate(&p)?;
+    // Build the wasm engine once, here at setup, and hand it to each wasm node - one shared
+    // engine and epoch ticker for the run, rather than a hidden global.
+    let wasm_engine = build_wasm_engine(&p);
     let mut sources: JoinSet<Result<()>> = JoinSet::new();
     let mut work: JoinSet<Result<()>> = JoinSet::new();
     #[cfg(feature = "inspect")]
@@ -316,8 +338,9 @@ pub async fn run(
         };
         #[cfg(not(feature = "inspect"))]
         let inspect: Option<crate::inspect::Inspect> = None;
+        let engine = wasm_engine.clone();
         work.spawn(async move {
-            let r = transform::run(op, rxs, tx, nm, inspect).await;
+            let r = transform::run(op, rxs, tx, nm, inspect, engine).await;
             record_error(&r, &node);
             r
         });
@@ -434,6 +457,7 @@ fn transform_kind(o: &Transform) -> NodeKind {
         Transform::Window { .. } => NodeKind::Window,
         Transform::Map { .. } => NodeKind::Map,
         Transform::Join { .. } => NodeKind::Join,
+        Transform::Wasm { .. } => NodeKind::Wasm,
         // Forward-compat: an unknown transform fails in `transform::run`; kind is cosmetic.
         _ => NodeKind::Filter,
     }
@@ -846,5 +870,6 @@ mod tests {
         fn node_error(&self) {
             self.errors.fetch_add(1, Ordering::Relaxed);
         }
+        fn wasm_memory(&self, _: u64) {}
     }
 }

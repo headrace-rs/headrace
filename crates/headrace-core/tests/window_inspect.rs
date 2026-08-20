@@ -36,6 +36,7 @@ async fn window_answers_a_query_from_its_own_loop() {
         win_tx,
         nm,
         Some(inspect),
+        headrace_core::transform::WasmEngine::default(),
     ));
 
     // Three records in [0, 5s), then one at 6s that advances the watermark and fires it.

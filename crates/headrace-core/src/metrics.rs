@@ -17,6 +17,7 @@ pub enum NodeKind {
     Window,
     Map,
     Join,
+    Wasm,
     Sink,
 }
 
@@ -28,6 +29,7 @@ impl NodeKind {
             NodeKind::Window => "window",
             NodeKind::Map => "map",
             NodeKind::Join => "join",
+            NodeKind::Wasm => "wasm",
             NodeKind::Sink => "sink",
         }
     }
@@ -78,6 +80,9 @@ pub trait NodeRecorder: Send + Sync {
     fn window_flushed(&self, groups: u64);
     /// The node's task terminated with an error.
     fn node_error(&self);
+    /// A wasm module's current linear-memory size, in bytes. Recorded when it changes, so
+    /// operators can right-size `max_memory`.
+    fn wasm_memory(&self, bytes: u64);
 }
 
 /// The default: records nothing.
@@ -96,6 +101,7 @@ impl NodeRecorder for NoopRecorder {
     fn record_dropped(&self, _: u64, _: DropReason) {}
     fn window_flushed(&self, _: u64) {}
     fn node_error(&self) {}
+    fn wasm_memory(&self, _: u64) {}
 }
 
 /// A [`Metrics`] shared across node tasks.
@@ -125,5 +131,9 @@ impl NodeMetrics {
 
     pub fn error(&self) {
         self.0.node_error();
+    }
+
+    pub fn wasm_memory(&self, bytes: u64) {
+        self.0.wasm_memory(bytes);
     }
 }

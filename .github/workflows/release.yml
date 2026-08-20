@@ -169,7 +169,7 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
-          for crate in headrace-ir headrace-record headrace-proto headrace-core headrace; do
+          for crate in headrace-ir headrace-record headrace-wasm-macro headrace-proto headrace-core headrace-wasm-guest headrace; do
             echo "::group::publish $crate"
             cargo publish -p "$crate" --locked
             echo "::endgroup::"

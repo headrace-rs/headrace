@@ -3,11 +3,15 @@ resolver = "2"
 members = [
     "crates/headrace-ir",
     "crates/headrace-record",
+    "crates/headrace-wasm-macro",
+    "crates/headrace-wasm-guest",
     "crates/headrace-core",
     "crates/headrace",
     "crates/headrace-proto",
     "crates/headrace-proto-gen",
 ]
+# Targets wasm32, not the host; built on demand to refresh the test fixture (examples/wasm/README.md).
+exclude = ["examples/wasm"]
 
 [workspace.package]
 version = "0.1.19"
@@ -18,6 +22,7 @@ repository = "https://github.com/headrace-rs/headrace"
 [workspace.dependencies]
 headrace-ir = { path = "crates/headrace-ir", version = "0.1.19" }
 headrace-record = { path = "crates/headrace-record", version = "0.1.19" }
+headrace-wasm-macro = { path = "crates/headrace-wasm-macro", version = "0.1.19" }
 headrace-core = { path = "crates/headrace-core", version = "0.1.19" }
 headrace-proto = { path = "crates/headrace-proto", version = "0.1.19" }
 serde = { version = "1", features = ["derive"] }
@@ -48,4 +53,8 @@ prost = "0.14"
 async-nats = "0.50"
 rmp-serde = "1"
 bytes = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+wasmtime = { version = "47", default-features = false, features = ["runtime", "cranelift"] }
+sha2 = "0.10"
 proptest = "1"

@@ -74,6 +74,7 @@ struct OtelMetrics {
     window_flushes: Counter<u64>,
     window_groups: Histogram<u64>,
     node_errors: Counter<u64>,
+    wasm_memory: Histogram<u64>,
 }
 
 impl OtelMetrics {
@@ -99,6 +100,10 @@ impl OtelMetrics {
                 .u64_counter("headrace.node.errors")
                 .with_description("Node tasks that terminated with an error")
                 .build(),
+            wasm_memory: meter
+                .u64_histogram("headrace.wasm.memory.bytes")
+                .with_description("A wasm module's linear-memory size in bytes")
+                .build(),
         }
     }
 }
@@ -115,6 +120,7 @@ impl Metrics for OtelMetrics {
             window_flushes: self.window_flushes.clone(),
             window_groups: self.window_groups.clone(),
             node_errors: self.node_errors.clone(),
+            wasm_memory: self.wasm_memory.clone(),
         })
     }
 }
@@ -129,6 +135,7 @@ struct OtelNodeRecorder {
     window_flushes: Counter<u64>,
     window_groups: Histogram<u64>,
     node_errors: Counter<u64>,
+    wasm_memory: Histogram<u64>,
 }
 
 impl NodeRecorder for OtelNodeRecorder {
@@ -152,6 +159,9 @@ impl NodeRecorder for OtelNodeRecorder {
     }
     fn node_error(&self) {
         self.node_errors.add(1, &self.attrs);
+    }
+    fn wasm_memory(&self, bytes: u64) {
+        self.wasm_memory.record(bytes, &self.attrs);
     }
 }
 
@@ -178,6 +188,7 @@ mod tests {
         rollup.record_dropped(4, DropReason::Capped);
         rollup.window_flushed(3);
         rollup.node_error();
+        rollup.wasm_memory(1 << 20);
         telemetry.metrics.node("gen", NodeKind::Source).record_out();
         telemetry.shutdown();
     }

@@ -1,0 +1,19 @@
+# Excluded from the workspace (see the root Cargo.toml): it targets wasm32, not the host. Build
+# it with the command in README.md to regenerate the committed .wasm test fixture.
+[package]
+name = "headrace-wasm-example-double"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+headrace-wasm-guest = { path = "../../crates/headrace-wasm-guest" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+strip = true
