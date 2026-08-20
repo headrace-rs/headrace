@@ -32,6 +32,8 @@ cargo test --workspace --all-features
 - Do not use "bespoke"; say "custom".
 - Do not use "shuffle"; say "repartition" or describe the data movement directly.
 - Do not use "folds into"; say "applies to" or "aggregates".
+- Do not use "speaks" (as in "speaks a protocol/version"); say "uses", "supports", or "targets".
+- Do not use "hurts"; name the specific cost.
 
 ## Commits
 
