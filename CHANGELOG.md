@@ -1,3 +1,9 @@
+## 0.1.20 (2026-08-20)
+
+### Features
+
+- run a sandboxed WebAssembly transform
+
 ## 0.1.19 (2026-08-17)
 
 ### Features

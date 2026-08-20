@@ -1223,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "headrace"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "anyhow",
  "clap",
@@ -1244,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-core"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1275,7 +1275,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-ir"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "schemars 0.8.22",
  "serde",
@@ -1285,7 +1285,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-proto"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "prost",
  "tonic",
@@ -1294,14 +1294,14 @@ dependencies = [
 
 [[package]]
 name = "headrace-proto-gen"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "tonic-prost-build",
 ]
 
 [[package]]
 name = "headrace-record"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "serde",
  "serde_json",
@@ -1309,7 +1309,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-wasm-guest"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "headrace-record",
  "headrace-wasm-macro",
@@ -1318,7 +1318,7 @@ dependencies = [
 
 [[package]]
 name = "headrace-wasm-macro"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "quote",
  "syn 2.0.119",
