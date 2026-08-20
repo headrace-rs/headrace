@@ -1,6 +1,6 @@
 # 0018. WASM transform: a bytes ABI, sandboxed, local modules
 
-- Status: Accepted
+- Status: Accepted; interface and authoring superseded by ADR-0020, sourcing extended by ADR-0019
 - Date: 2026-08-17
 
 ## Context

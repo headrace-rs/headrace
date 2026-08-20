@@ -32,3 +32,4 @@ Significant architectural decisions are recorded here as ADRs, using the
 - [0017](./0017-sink-delivery-policy.md) - Sink delivery: retry through an outage
 - [0018](./0018-wasm-transform.md) - WASM transform: a bytes ABI, sandboxed, local modules
 - [0019](./0019-wasm-module-sourcing.md) - WASM module sourcing: oci:// and file:// references
+- [0020](./0020-wasm-component-model.md) - WASM transform: adopt the Component Model
