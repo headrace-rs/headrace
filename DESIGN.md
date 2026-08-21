@@ -198,7 +198,7 @@ consumer (fan-out is a later `tee`). Full JSON Schema: `headrace schema`.
 | transform | `window` | tumbling + sliding, event-time; `group_by` + `aggregate {count,sum,min,max,avg}`; `on_missing {skip,error}`. Session windows *next* |
 | transform | `map` | rewrite `value` from a numeric expression |
 | transform | `join` | cross-series arithmetic on aligned windows |
-| transform | `wasm` | run a sandboxed WebAssembly module per record (`wasm` feature); local module path + optional `sha256` |
+| transform | `wasm` | run a sandboxed WebAssembly module per record (`wasm` feature); module from a path, `file://`, or digest-pinned `oci://` (`wasm-oci`) |
 | sink | `stdout` | text / json |
 | sink | `otlp` | OTLP/gRPC exporter (`otlp` feature); Prometheus remote-write *next* |
 
