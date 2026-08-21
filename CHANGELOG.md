@@ -1,3 +1,10 @@
+## 0.1.21 (2026-08-21)
+
+### Features
+
+- source modules from file and oci
+- pass wasm oci flags
+
 ## 0.1.20 (2026-08-20)
 
 ### Features
