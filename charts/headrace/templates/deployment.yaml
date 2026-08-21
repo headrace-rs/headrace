@@ -39,6 +39,12 @@ spec:
             {{- if .Values.metrics.otlpEndpoint }}
             - --otlp-endpoint={{ .Values.metrics.otlpEndpoint }}
             {{- end }}
+            {{- range .Values.wasm.allowRegistries }}
+            - --wasm-allow-registry={{ . }}
+            {{- end }}
+            {{- if .Values.wasm.cacheDir }}
+            - --wasm-cache-dir={{ .Values.wasm.cacheDir }}
+            {{- end }}
           ports:
             - name: otlp
               containerPort: {{ .Values.service.port }}
@@ -61,10 +67,18 @@ spec:
             - name: pipeline
               mountPath: /etc/headrace
               readOnly: true
+            {{- if .Values.wasm.cacheDir }}
+            - name: wasm-cache
+              mountPath: {{ .Values.wasm.cacheDir }}
+            {{- end }}
       volumes:
         - name: pipeline
           configMap:
             name: {{ include "headrace.fullname" . }}
+        {{- if .Values.wasm.cacheDir }}
+        - name: wasm-cache
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

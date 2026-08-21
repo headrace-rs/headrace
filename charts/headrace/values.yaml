@@ -41,6 +41,15 @@ metrics:
   # OTLP endpoint for metrics.mode=otlp (else OTEL_EXPORTER_OTLP_ENDPOINT / default).
   otlpEndpoint: ""
 
+# oci:// wasm module sourcing (ADR-0019). Needs an image built with the wasm-oci feature.
+wasm:
+  # Registries an oci:// module may be pulled from - a security allowlist. Empty denies every
+  # pull. An operator control, never taken from the pipeline itself.
+  allowRegistries: []
+  # Cache directory for pulled modules. When set, an emptyDir is mounted here so the cache
+  # survives restarts and works under the read-only root filesystem; unset uses a temp dir.
+  cacheDir: ""
+
 service:
   type: ClusterIP
   # OTLP/gRPC receiver port.
