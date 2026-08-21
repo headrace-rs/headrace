@@ -38,6 +38,7 @@ async fn state_get_reports_live_window_state() {
     let metrics: SharedMetrics = Arc::new(NoopMetrics);
     let opts = RunOptions {
         inspect_addr: Some(addr),
+        ..Default::default()
     };
     let run = tokio::spawn(headrace_core::run(p, InProcess::default(), metrics, opts));
 
@@ -98,6 +99,7 @@ async fn watch_streams_window_state_as_it_changes() {
     let metrics: SharedMetrics = Arc::new(NoopMetrics);
     let opts = RunOptions {
         inspect_addr: Some(addr),
+        ..Default::default()
     };
     let run = tokio::spawn(headrace_core::run(p, InProcess::default(), metrics, opts));
 

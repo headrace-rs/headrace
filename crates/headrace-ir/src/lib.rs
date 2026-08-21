@@ -137,7 +137,9 @@ pub enum Transform {
     Wasm {
         id: String,
         input: String,
-        /// Path to the `.wasm` module on disk.
+        /// Where to load the module from (ADR-0019): a local path or `file://` URI, or a
+        /// digest-pinned `oci://<registry>/<repository>@sha256:<digest>` reference (the latter
+        /// needs the `wasm-oci` build).
         module: String,
         /// Optional SHA-256 (hex) of the module, verified when it is loaded.
         #[serde(default)]

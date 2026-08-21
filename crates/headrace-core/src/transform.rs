@@ -19,6 +19,10 @@ pub use window::{Window, WindowConfig};
 #[doc(hidden)]
 pub use wasm::Bench as WasmBench;
 
+// OCI sourcing config for oci:// modules; the runtime builds it and the engine handle carries it.
+#[cfg(feature = "wasm")]
+pub(crate) use wasm::OciSource;
+
 use crate::backend::{Consumer, Producer};
 use crate::inspect::Inspect;
 use crate::metrics::NodeMetrics;
@@ -32,6 +36,8 @@ use headrace_ir::Transform;
 pub struct WasmEngine {
     #[cfg(feature = "wasm")]
     inner: Option<std::sync::Arc<WasmEngineInner>>,
+    #[cfg(feature = "wasm")]
+    oci: OciSource,
 }
 
 /// Holds the engine and its ticker's stop flag; dropping it (with the last [`WasmEngine`] clone)
@@ -52,14 +58,16 @@ impl Drop for WasmEngineInner {
 
 impl WasmEngine {
     /// Build the engine (and start its epoch ticker). Call once when a pipeline has wasm nodes.
+    /// `oci` carries where oci:// modules may be pulled from (ADR-0019).
     #[cfg(feature = "wasm")]
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(oci: OciSource) -> Self {
         let (engine, ticker_stop) = wasm::build_engine();
         Self {
             inner: Some(std::sync::Arc::new(WasmEngineInner {
                 engine,
                 ticker_stop,
             })),
+            oci,
         }
     }
 
@@ -69,6 +77,11 @@ impl WasmEngine {
             .as_ref()
             .map(|i| &i.engine)
             .ok_or_else(|| anyhow::anyhow!("a wasm node needs an engine, but none was set up"))
+    }
+
+    #[cfg(feature = "wasm")]
+    fn oci_source(&self) -> &OciSource {
+        &self.oci
     }
 }
 
@@ -148,7 +161,7 @@ pub async fn run(
                 max_memory,
                 timeout,
             };
-            wasm::run(spec, wasm.engine()?, one(rxs), tx, nm).await
+            wasm::run(spec, wasm.engine()?, wasm.oci_source(), one(rxs), tx, nm).await
         }
         // Forward-compat: an IR node type this build does not implement.
         other => bail!("unsupported transform `{}`", other.id()),
@@ -169,7 +182,7 @@ mod tests {
 
     #[test]
     fn dropping_the_engine_stops_the_ticker() {
-        let engine = WasmEngine::new();
+        let engine = WasmEngine::new(OciSource::default());
         let stop = engine.inner.as_ref().unwrap().ticker_stop.clone();
         assert!(!stop.load(Ordering::Relaxed));
         // The last handle dropping signals the ticker thread to exit.

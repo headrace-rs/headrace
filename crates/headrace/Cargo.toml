@@ -36,3 +36,7 @@ opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry-stdout.workspace = true
+
+[features]
+# Pull oci:// wasm modules from a registry (ADR-0019); opt-in, off by default to keep the binary lean.
+wasm-oci = ["headrace-core/wasm-oci"]

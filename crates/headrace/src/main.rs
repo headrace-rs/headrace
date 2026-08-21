@@ -76,6 +76,13 @@ enum Cmd {
         /// This worker's index in `0..workers` (e.g. a StatefulSet ordinal).
         #[arg(long, env = "HEADRACE_WORKER_INDEX", default_value_t = 0)]
         worker_index: u32,
+        /// Allow oci:// wasm modules from this registry host (repeatable, e.g. ghcr.io); needs the
+        /// wasm-oci build. A trust boundary: CLI only, never set from the pipeline file.
+        #[arg(long = "wasm-allow-registry", value_name = "HOST")]
+        wasm_allow_registry: Vec<String>,
+        /// Cache directory for oci:// wasm modules (default: a per-OS temp dir).
+        #[arg(long = "wasm-cache-dir", value_name = "DIR")]
+        wasm_cache_dir: Option<PathBuf>,
     },
     /// Parse and statically check a pipeline.
     Validate { file: PathBuf },
@@ -111,6 +118,8 @@ async fn main() -> Result<()> {
             partitions,
             workers,
             worker_index,
+            wasm_allow_registry,
+            wasm_cache_dir,
         } => {
             let pipeline = load(&file)?;
             let telemetry = metrics::init(cli.metrics, cli.otlp_endpoint.clone())?;
@@ -118,7 +127,11 @@ async fn main() -> Result<()> {
                 Some(t) => t.metrics.clone(),
                 None => Arc::new(headrace_core::NoopMetrics),
             };
-            let opts = headrace_core::RunOptions { inspect_addr };
+            let opts = headrace_core::RunOptions {
+                inspect_addr,
+                wasm_allow_registry,
+                wasm_cache_dir,
+            };
             let nats = NatsOpts {
                 url: nats_url,
                 name,

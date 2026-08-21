@@ -215,19 +215,23 @@ fn node_ids(p: &Pipeline) -> impl Iterator<Item = &str> {
 /// Build the shared wasm engine when the pipeline has a wasm node, otherwise an empty handle
 /// (so a pipeline with no wasm nodes starts no engine or ticker).
 #[cfg(feature = "wasm")]
-fn build_wasm_engine(p: &Pipeline) -> crate::transform::WasmEngine {
+fn build_wasm_engine(p: &Pipeline, opts: &RunOptions) -> crate::transform::WasmEngine {
     if p.transforms
         .iter()
         .any(|t| matches!(t, Transform::Wasm { .. }))
     {
-        crate::transform::WasmEngine::new()
+        let oci = crate::transform::OciSource::new(
+            opts.wasm_allow_registry.clone(),
+            opts.wasm_cache_dir.clone(),
+        );
+        crate::transform::WasmEngine::new(oci)
     } else {
         crate::transform::WasmEngine::default()
     }
 }
 
 #[cfg(not(feature = "wasm"))]
-fn build_wasm_engine(_p: &Pipeline) -> crate::transform::WasmEngine {
+fn build_wasm_engine(_p: &Pipeline, _opts: &RunOptions) -> crate::transform::WasmEngine {
     crate::transform::WasmEngine::default()
 }
 
@@ -286,6 +290,13 @@ pub struct RunOptions {
     /// it off.
     #[cfg(feature = "inspect")]
     pub inspect_addr: Option<std::net::SocketAddr>,
+    /// Registries an `oci://` wasm module may be pulled from (host, e.g. `ghcr.io`; ADR-0019).
+    /// A trust boundary set from the CLI only, so a pipeline file cannot widen it. Empty (the
+    /// default) denies every oci pull. Ignored without the `wasm-oci` feature.
+    pub wasm_allow_registry: Vec<String>,
+    /// Directory for the content-addressed `oci://` module cache. Defaults to a per-OS temp
+    /// subdirectory when unset. Ignored without the `wasm-oci` feature.
+    pub wasm_cache_dir: Option<std::path::PathBuf>,
 }
 
 /// Wire the graph onto `backend` and run.
@@ -300,12 +311,10 @@ pub async fn run(
     metrics: SharedMetrics,
     opts: RunOptions,
 ) -> Result<()> {
-    #[cfg(not(feature = "inspect"))]
-    let _ = opts; // no side surfaces compiled in
     validate(&p)?;
     // Build the wasm engine once, here at setup, and hand it to each wasm node - one shared
     // engine and epoch ticker for the run, rather than a hidden global.
-    let wasm_engine = build_wasm_engine(&p);
+    let wasm_engine = build_wasm_engine(&p, &opts);
     let mut sources: JoinSet<Result<()>> = JoinSet::new();
     let mut work: JoinSet<Result<()>> = JoinSet::new();
     #[cfg(feature = "inspect")]

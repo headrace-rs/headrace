@@ -35,6 +35,10 @@ rmp-serde = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 wasmtime = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+oci-wasm = { workspace = true, optional = true }
+oci-client = { workspace = true, optional = true }
+docker_credential = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
 
 [features]
 # Exposes automock-generated Backend/Producer/Consumer mocks for downstream tests.
@@ -47,6 +51,8 @@ inspect = ["dep:tonic", "dep:headrace-proto", "dep:tonic-reflection", "dep:tokio
 nats = ["dep:async-nats", "dep:rmp-serde", "dep:tokio-stream", "dep:bytes"]
 # WASM transform: run a user module as a stateless transform (ADR-0018).
 wasm = ["dep:wasmtime", "dep:rmp-serde", "dep:sha2"]
+# Pull oci:// wasm modules from a registry (ADR-0019); opt-in to keep the default build lean.
+wasm-oci = ["wasm", "dep:oci-wasm", "dep:oci-client", "dep:docker_credential", "dep:base64"]
 
 [dev-dependencies]
 serde_norway.workspace = true
