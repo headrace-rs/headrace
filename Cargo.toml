@@ -55,7 +55,7 @@ rmp-serde = "1"
 bytes = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
-wasmtime = { version = "47", default-features = false, features = ["runtime", "cranelift"] }
+wasmtime = { version = "48", default-features = false, features = ["runtime", "cranelift"] }
 sha2 = "0.10"
 oci-wasm = { version = "0.6", default-features = false }
 oci-client = { version = "0.17", default-features = false, features = ["rustls-tls"] }
